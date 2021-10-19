@@ -202,7 +202,10 @@ lang = r"""
     // Also note: we allow leading slashes so we can pass futures-like
     // symbols through the entire pipline e.g. /MES /MES210604C04200000
     option: /\/?[A-Z]{1,6}\d{6}[PC]\d{8}/
-    stock: /\/?[A-Za-z\/\.]{1,10}/
+
+    // Stock is anything else, but for our purpose can also be prefixed
+    // with a contract namespace. Like STOCK:BTC vs. CRYPTO:BTC etc.
+    stock: /\/?[:A-Za-z\/\.]{1,10}/
 
     single_order: stock | option
 
