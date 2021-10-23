@@ -15,10 +15,18 @@ import re
 
 from loguru import logger
 from mutil.dcache import FetchCache  # type: ignore
-from mutil.numeric import roundnear5, roundnear10 # type: ignore
+from mutil.numeric import roundnear5, roundnear10  # type: ignore
 
 FG_URL = "https://money.cnn.com/data/fear-and-greed/"
-FG_REGEX = r"Greed Now:\s+(\d+)"
+
+# Collect all FG values from the FG page by text extraction.
+FGS = dict(
+    now=r"Greed Now:\s+(\d+)",
+    prev=r"Greed Previous Close:\s+(\d+)",
+    week=r"Greed 1 Week Ago:\s+(\d+)",
+    month=r"Greed 1 Month Ago:\s+(\d+)",
+    year=r"Greed 1 Year Ago:\s+(\d+)",
+)
 
 FAT_URL = "https://markets.cboe.com/us/options/notices/reasonability/"
 
@@ -30,7 +38,7 @@ Tick = Enum("Tick", "ALL_1 NORMAL PPP")
 
 
 def pennyTickTypeURL():
-    """ Generate URL for current day's option tick intervals """
+    """Generate URL for current day's option tick intervals"""
     # http://markets.cboe.com/us/options/market_statistics/penny_tick_type/?mkt=exo
     now = arrow.now().to("US/Eastern")
     # if today is a weekend, back up to friday
@@ -67,7 +75,9 @@ def pennyTickTypeURL():
 
 @dataclass
 class MarketMetadata:
-    ppp: dict[str, Tick] = field(default_factory=lambda: defaultdict(lambda: Tick.NORMAL))
+    ppp: dict[str, Tick] = field(
+        default_factory=lambda: defaultdict(lambda: Tick.NORMAL)
+    )
 
     async def setup(self):
         self.session = aiohttp.ClientSession()
@@ -75,7 +85,7 @@ class MarketMetadata:
     async def shutdown(self):
         await self.session.close()
 
-    async def feargreed(self) -> int:
+    async def feargreed(self) -> dict[str, int]:
         """Fetch the fear and greed index from money.cnn.com.
 
         Note: fetched result is cached on 5 minute boundaries."""
@@ -83,7 +93,14 @@ class MarketMetadata:
             self.session, FG_URL, "greed-fear", refreshMinutes=5
         ).get()
 
-        return int(re.findall(FG_REGEX, content)[0])
+        fgs = {}
+
+        # run fear/greed extraction across all RG regexes
+        # (the page has time periods of: now, yesterday, last {week,month,year})
+        for name, regex in FGS.items():
+            fgs[name] = int(re.findall(regex, content)[0])
+
+        return fgs
 
     async def populateOptionTickLookupDict(self) -> None:
         """Fetch the current penny tick option list on a 4 hour cache.
