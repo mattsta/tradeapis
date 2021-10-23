@@ -22,6 +22,7 @@ import datetime
 from collections import defaultdict
 
 from mutil.dcache import FetchCache  # type: ignore
+
 # from mutil.dates import thirdFridayForMonth, thirdFridays  # type: ignore
 from mutil.numeric import roundnear5, roundnear10  # type: ignore
 
@@ -201,7 +202,7 @@ class Order:
         return opposite
 
     def getClosingSide(self):
-        """ How to close an open order for any given side """
+        """How to close an open order for any given side"""
         # Note: this is only for the opening side.
         # Closing order types of 'sell', 'buy_to_close', 'sell_to_close' don't have opposite sides
         return SIDE_CLOSE_MAP[self.side]
@@ -241,7 +242,7 @@ class Order:
 
 @dataclass
 class OrderSingle:
-    """ single equity or option order """
+    """single equity or option order"""
 
     what: str
 
@@ -274,7 +275,7 @@ class Leg:
 
 @dataclass
 class OrderMultileg:
-    """  multi-leg option order, up to 4 legs """
+    """multi-leg option order, up to 4 legs"""
 
     # https://documentation.tradier.com/brokerage-api/trading/place-multileg-order
     symbol: str
@@ -399,7 +400,11 @@ class TradierCredentials:
     # are always accessed using the 'prod' key.
     credentialMap: dict[str, str]  # map of {mode: api key}
 
+    # live market data websocket session id
     sessionId: Optional[str] = None
+
+    # live account updates websocket session id
+    sessionIdAccount: Optional[str] = None
 
     def __post_init__(self):
         mode = self.mode
@@ -443,7 +448,7 @@ class TradierCredentials:
         return genURL(endpoint), self.omniCredentials
 
     def urlHeadersProd(self, endpoint):
-        """ Require production key all the time (streaming quotes) """
+        """Require production key all the time (streaming quotes)"""
 
         def genURL(endpoint):
             return f"{self.endpoints['prod']}/{endpoint}"
@@ -506,7 +511,7 @@ class TradierCredentials:
         if preview:
             data["preview"] = "true"
 
-        logger.info(f"Sending order: {data}")
+        logger.info("Sending order: {}", data)
         return self.session.post(url, headers=headers, data=data)
 
     # https://documentation.tradier.com/brokerage-api/trading/cancel-order
@@ -610,6 +615,12 @@ class TradierCredentials:
         url, headers = self.urlHeadersProd("v1/markets/events/session")
         return self.session.post(url, headers=headers)
 
+    # https://documentation.tradier.com/brokerage-api/streaming/create-account-session
+    def createStreamingSessionAccount(self):
+        # Streaming always uses production endpoints
+        url, headers = self.urlHeadersProd("v1/accounts/events/session")
+        return self.session.post(url, headers=headers)
+
     # https://documentation.tradier.com/brokerage-api/streaming/wss-market-websocket
     def addWebsocketSymbols(
         self, sessionId, symbols, filter=["quote", "summary", "timesale"]
@@ -627,19 +638,32 @@ class TradierCredentials:
         #    websocket session, but if you disconnect, you need a new session.
         #  - for http streaming, you need a new session every time you update
         #    your symbols if the previous session is older than 5 minutes.
-        logger.info(f"Requesting new streaming session...")
+        logger.info("Requesting new streaming session...")
         ss = await self.createStreamingSession()
         sessionIdResult = await ss.json()
-        logger.info(f"Got session: {sessionIdResult}")
+        logger.info(
+            "Got streaming session: {}...", sessionIdResult["stream"]["sessionid"][:8]
+        )
         self.sessionId = sessionIdResult["stream"]["sessionid"]
 
+    async def populateStreamingSessionAccount(self):
+        logger.info("Requesting new account streaming session...")
+        ss = await self.createStreamingSessionAccount()
+        sessionIdResult = await ss.json()
+        logger.info(
+            "Got account streaming session: {}...",
+            sessionIdResult["stream"]["sessionid"][:8],
+        )
+        self.sessionIdAccount = sessionIdResult["stream"]["sessionid"]
+
     async def websocketSubscribe(self, ws, symbols):
+        """Subscribe to symbols for streaming market data."""
         try:
             # If this is the first connection, create new ID
             if not self.sessionId:
                 await self.populateStreamingSession()
 
-            logger.info(f"Subscribing to {symbols}")
+            logger.info("Subscribing to {}", symbols)
 
             # use saved ID
             req = self.addWebsocketSymbols(self.sessionId, symbols)
@@ -651,6 +675,7 @@ class TradierCredentials:
 
     # https://documentation.tradier.com/brokerage-api/streaming/wss-market-websocket
     async def websocketConnect(self, cxn=None):
+        """Connect to WebSocket for streaming market data."""
         if cxn:
             # if already connected, throw away the existing session and reconnect.
             try:
@@ -667,6 +692,57 @@ class TradierCredentials:
         # now connect...
         return await websockets.connect(
             "wss://ws.tradier.com/v1/markets/events",
+            ping_interval=10,
+            ping_timeout=30,
+            close_timeout=1,
+            max_queue=2 ** 32,
+            read_limit=2 ** 20,
+        )
+
+    # https://documentation.tradier.com/brokerage-api/streaming/wss-account-websocket
+    def addWebsocketSymbolsAccountEvents(self, sessionId, events=["order"]) -> bytes:
+        """Subscribe to account updates with the current session ID.
+
+        Currently the only streaming update type is "order" updates with
+        status values of "open", "pending", "filled", etc."""
+        return orjson.dumps(dict(sessionid=sessionId, events=events))
+
+    async def websocketSubscribeAccount(self, ws):
+        """Subscribe to account updates on a live websocket connection."""
+        try:
+            # If this is the first connection, create new ID
+            if not self.sessionIdAccount:
+                await self.populateStreamingSessionAccount()
+
+            logger.info("Subscribing to account updates...")
+
+            # use saved ID
+            req = self.addWebsocketSymbolsAccountEvents(self.sessionIdAccount)
+            await ws.send(req)
+            return True
+        except:
+            logger.exception(f"Failed to websocket subscribe to account events?")
+            return False
+
+    # https://documentation.tradier.com/brokerage-api/streaming/wss-account-websocket
+    async def websocketConnectAccount(self, cxn=None):
+        """Connect to WebSocket for streaming order/account updates."""
+        if cxn:
+            # if already connected, throw away the existing session and reconnect.
+            try:
+                await cxn.close()
+            except:
+                pass
+            finally:
+                # session ID no longer valid if we close the connection
+                self.sessionId = None
+
+        # populate a new session because we'll probably subscribe() soon
+        await self.populateStreamingSession()
+
+        # now connect...
+        return await websockets.connect(
+            "wss://ws.tradier.com/v1/accounts/events",
             ping_interval=10,
             ping_timeout=30,
             close_timeout=1,
@@ -989,3 +1065,9 @@ class TradierClient:
 
     def websocketSubscribe(self, ws, symbols):
         return self.cr.websocketSubscribe(ws, symbols)
+
+    def websocketConnectAccount(self, cxn=None):
+        return self.cr.websocketConnectAccount(cxn)
+
+    def websocketSubscribeAccount(self, ws):
+        return self.cr.websocketSubscribeAccount(ws)
