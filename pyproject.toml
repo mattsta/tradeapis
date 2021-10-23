@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tradeapis"
-version = "1.0.4"
+version = "1.0.5"
 description = "Stock Market Data Utilities and API Wrappers for Tradier, Polygon"
 authors = ["Matt Stancliff <matt@genges.com>"]
 license = "Apache-2.0"
@@ -10,17 +10,16 @@ python = "^3.9"
 aiohttp = "^3.7.4"
 orjson = "^3.5.2"
 pandas = "^1.2.4"
-websockets = "^9.1"
 arrow = "^1.1.0"
 lark = "^0.11.3"
 prettyprinter = "^0.18.0"
 cachetools = "^4.2.2"
-pandas-market-calendars = "^2.0"
+pandas-market-calendars = "^3.2"
 loguru = "^0.5.3"
 
-mutil = { git = "https://github.com/mattsta/mutil.git", tag="1.2.2" }
+mutil = { git = "https://github.com/mattsta/mutil.git", tag="1.2.3" }
 # mutil = { path = "../../mutil/", develop = true }
-python-dotenv = "^0.18.0"
+python-dotenv = "^0.19.1"
 beautifulsoup4 = "^4.9.3"
 
 [tool.poetry.dev-dependencies]
