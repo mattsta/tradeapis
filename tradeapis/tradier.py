@@ -624,7 +624,7 @@ class TradierCredentials:
     # https://documentation.tradier.com/brokerage-api/streaming/wss-market-websocket
     def addWebsocketSymbols(
         self, sessionId, symbols, filter=["quote", "summary", "timesale"]
-    ):
+    ) -> bytes:
         return orjson.dumps(
             dict(symbols=list(symbols), sessionid=sessionId, filter=filter)
         )
@@ -692,6 +692,7 @@ class TradierCredentials:
         # now connect...
         return await websockets.connect(
             "wss://ws.tradier.com/v1/markets/events",
+            compression=None,
             ping_interval=10,
             ping_timeout=30,
             close_timeout=1,
@@ -743,6 +744,7 @@ class TradierCredentials:
         # now connect...
         return await websockets.connect(
             "wss://ws.tradier.com/v1/accounts/events",
+            compression=None,
             ping_interval=10,
             ping_timeout=30,
             close_timeout=1,
