@@ -676,15 +676,15 @@ class TradierCredentials:
     # https://documentation.tradier.com/brokerage-api/streaming/wss-market-websocket
     async def websocketConnect(self, cxn=None):
         """Connect to WebSocket for streaming market data."""
-        if cxn:
-            # if already connected, throw away the existing session and reconnect.
-            try:
+        # if already connected, throw away the existing session and reconnect.
+        try:
+            if cxn:
                 await cxn.close()
-            except:
-                pass
-            finally:
-                # session ID no longer valid if we close the connection
-                self.sessionId = None
+        except:
+            pass
+        finally:
+            # session ID no longer valid if we close the connection
+            self.sessionId = None
 
         # populate a new session because we'll probably subscribe() soon
         await self.populateStreamingSession()
@@ -711,9 +711,9 @@ class TradierCredentials:
     async def websocketSubscribeAccount(self, ws):
         """Subscribe to account updates on a live websocket connection."""
         try:
-            # If this is the first connection, create new ID
-            if not self.sessionIdAccount:
-                await self.populateStreamingSessionAccount()
+            # Always create new ID because if we cache it, it may be
+            # too old to be used again (and we don't want to TTL it)
+            await self.populateStreamingSessionAccount()
 
             logger.info("Subscribing to account updates...")
 
@@ -728,18 +728,16 @@ class TradierCredentials:
     # https://documentation.tradier.com/brokerage-api/streaming/wss-account-websocket
     async def websocketConnectAccount(self, cxn=None):
         """Connect to WebSocket for streaming order/account updates."""
-        if cxn:
-            # if already connected, throw away the existing session and reconnect.
-            try:
+        # if already connected, throw away the existing session and reconnect.
+        try:
+            if cxn:
                 await cxn.close()
-            except:
-                pass
-            finally:
-                # session ID no longer valid if we close the connection
-                self.sessionId = None
-
-        # populate a new session because we'll probably subscribe() soon
-        await self.populateStreamingSession()
+        except:
+            pass
+        finally:
+            # session ID no longer valid if we close the connection
+            # TODO: auto-expire cached session ids after 5-10 minutes
+            self.sessionId = None
 
         # now connect...
         return await websockets.connect(
