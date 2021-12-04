@@ -9,7 +9,6 @@ from typing import Optional
 from collections import Counter
 from dataclasses import dataclass, field
 from collections import defaultdict
-from bs4 import BeautifulSoup  # type: ignore
 import io
 import re
 
@@ -186,6 +185,9 @@ class MarketMetadata:
         assert None, "How did you get here?"
 
     async def fats(self):
+        # Only import if using this endpoint
+        from bs4 import BeautifulSoup  # type: ignore
+
         content = await FetchCache(self.session, FAT_URL, "fat-finger-openings").get()
         soup = BeautifulSoup(content, "html.parser")
         syms = Counter()
