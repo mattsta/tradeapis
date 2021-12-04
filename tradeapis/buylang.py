@@ -66,7 +66,6 @@ class Order:
           - IBKR has no concept of "to open" or "to close,"
           you just place buy and sell orders for any position and you
           are expected to manage your total net positions yourself.
-          management .
           - Other API brokers like Tradier or Alpaca expect you
           to trasmit your intent as "to Open" or "to Close" so they
           can validate your requests against your position counts
