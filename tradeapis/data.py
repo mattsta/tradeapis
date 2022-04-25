@@ -9,6 +9,7 @@ from typing import Optional
 from collections import Counter
 from dataclasses import dataclass, field
 from collections import defaultdict
+import orjson
 import io
 import re
 
@@ -16,15 +17,18 @@ from loguru import logger
 from mutil.dcache import FetchCache  # type: ignore
 from mutil.numeric import roundnear5, roundnear10  # type: ignore
 
-FG_URL = "https://money.cnn.com/data/fear-and-greed/"
+# they moved to a SPA / JSON interface so we can grab the JSON directly
+# instead of scraping and parsing their full HTML page!
+FG_URL = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
 
-# Collect all FG values from the FG page by text extraction.
+# Collect all FG values from the FG page by class selection.
+# These are JSON keys inside "fear_and_greed" mapping to our better names.
 FGS = dict(
-    now=r"Greed Now:\s+(\d+)",
-    prev=r"Greed Previous Close:\s+(\d+)",
-    week=r"Greed 1 Week Ago:\s+(\d+)",
-    month=r"Greed 1 Month Ago:\s+(\d+)",
-    year=r"Greed 1 Year Ago:\s+(\d+)",
+    now="score",
+    prev="previous_close",
+    week="previous_1_week",
+    month="previous_1_month",
+    year="previous_1_year",
 )
 
 FAT_URL = "https://markets.cboe.com/us/options/notices/reasonability/"
@@ -92,12 +96,15 @@ class MarketMetadata:
             self.session, FG_URL, "greed-fear", refreshMinutes=5
         ).get()
 
+        j = orjson.loads(content)
+
         fgs = {}
 
         # run fear/greed extraction across all RG regexes
         # (the page has time periods of: now, yesterday, last {week,month,year})
-        for name, regex in FGS.items():
-            fgs[name] = int(re.findall(regex, content)[0])
+        fg = j["fear_and_greed"]
+        for name, key in FGS.items():
+            fgs[name] = int(fg[key])
 
         return fgs
 
