@@ -5,6 +5,9 @@ from dotenv import dotenv_values
 import os
 
 from loguru import logger
+import orjson
+
+import asyncio
 
 import websockets
 import aiohttp
@@ -23,20 +26,92 @@ except:
 # https://polygon.io/sockets
 auth = {"action": "auth", "params": KEY}
 
-# https://polygon.io/docs/get_v2_ticks_stocks_trades__ticker___date__anchor (current, but ugly URL)
-def historicalTicks(session, symbol: str, date: str, timestamp=None):
+# https://polygon.io/docs/stocks/get_v3_trades__stockticker
+def historicalTrades(session, symbol: str, date: str):
     """Endpoint returns all trades for a date with a maximum of 50k results per query.
-    To get the next 50k results, use the timestamp of the last result as the
-    timestamp parameter for the next query. Repeat until no more result returned.
 
-    API returns a 'success' key on each result which will be false if we are out
-    of results (or if we are querying a non-trading day)."""
-    url = f"https://api.polygon.io/v2/ticks/stocks/trades/{symbol}/{date}"
-    args = {"limit": 50000, "apiKey": auth["params"]}
-    if timestamp:
-        args["timestamp"] = timestamp
+    Future results are fetched via the 'next_url' parameter to page through the result
+    set using the original query parameters, but with future date offsets.
+
+    End of results is signaled by no 'next_url' key present in the results."""
+    url = f"https://api.polygon.io/v3/trades/{symbol}"
+    args = {
+        "timestamp": date,
+        "limit": 50000,
+        "sort": "timestamp",
+        "order": "asc",
+        "apiKey": auth["params"],
+    }
 
     return session.get(url, params=args)
+
+
+# https://polygon.io/docs/stocks/get_v3_quotes__stockticker
+def historicalQuotes(session, symbol: str, date: str):
+    """Fetch all NBBO quote updates for a symbol for any date in the past.
+
+    Fetch all quotes for day via the readAll() generator."""
+
+    url = f"https://api.polygon.io/v3/quotes/{symbol}"
+    args = {
+        "timestamp": date,
+        "limit": 50000,
+        "sort": "timestamp",
+        "order": "asc",
+        "apiKey": auth["params"],
+    }
+
+    return session.get(url, params=args)
+
+
+async def readAll(what, session, *args):
+    """Use Polygon V3 API pattern to read an entire dataset via generator.
+
+    Usage:
+        async for page in readAll(historicalTrades, session, symbol, date):
+            results = page.get("results")
+
+    Also, the return is (idx, parsed) because we can't use enumerate() with
+    async genenerators, but we want to count the results anyway.
+    """
+
+    # This layout is somewhat unappealing, but it works and since it's
+    # all located in this generator, nobody else has to deal with it.
+
+    idx = 0
+    try:
+        # First request intial result with a 'next' URL to fetch
+        orig = what(session, *args)
+        result = await (await orig).read()
+        parsed = orjson.loads(result)
+        yield idx, parsed
+
+        # Note: this "next_url" check for continuation is always _after_ the
+        # previous result is returned, so we are always returning a complete
+        # result before checking if there's a next thing to retrieve (i.e. we
+        # aren't skipping over the final result from being returned)
+        while "next_url" in parsed:
+            # Fetch next URLs until no more next URLs are returned
+            orig = fetchNext(session, parsed)
+
+            idx += 1
+            result = await (await orig).read()
+            parsed = orjson.loads(result)
+            yield idx, parsed
+    except asyncio.CancelledError:
+        logger.error("Exit requested!")
+        return
+
+
+def fetchNext(session, result):
+    """Given a Polygon V3 result, fetch the 'next_url' or return None."""
+
+    # https://polygon.io/blog/api-pagination-patterns/
+    url = result.get("next_url")
+    assert url, "Only pass results having next_url into fetchNext!"
+
+    # the continuation URL doesn't include the API key, so we need to add it back...
+    return session.get(url + f"&apiKey={auth['params']}")
 
 
 # https://polygon.io/docs/get_v2_aggs_ticker__stocksTicker__range__multiplier___timespan___from___to__anchor
@@ -72,17 +147,36 @@ def groupedBars(session, date: str):
     return session.get(url, params=args)
 
 
-# https://polygon.io/docs/get_v2_reference_splits__stocksTicker__anchor
-def splits(session, symbol: str):
-    """Endpoint returns all historical stock split dates for symbol."""
+# https://polygon.io/docs/stocks/get_v3_reference_splits
+def splits(session, symbol: str, reverse=False):
+    """Endpoint returns all historical forward stock split dates for symbol.
 
-    url = f"https://api.polygon.io/v2/reference/splits/{symbol}"
-    args = {"apiKey": auth["params"]}
+    Note: this does NOT return reverse splits unless reverse_split=True, then it
+          *only* returns reverse splits, so for _all_ splits we basically need
+          to check all symbols twice every day. sigh."""
+
+    # TODO: this API supports filtering tickers by range, so we could just
+    #       request daily "tickers.gt=A" to get everything with one original
+    #       fetch with full pagination until the end (instead of all directly)
+    # See "Query Filter Extensions" at https://polygon.io/blog/api-pagination-patterns/
+    url = f"https://api.polygon.io/v3/reference/splits"
+
+    # we want a dual sort here so provide list of tuples so a dict
+    # doesn't overwrite the same shared key...
+    args = [
+        ("ticker", symbol),
+        ("reverse_split", reverse),
+        ("limit", 1000),
+        ("sort", "ticker"),
+        ("sort", "execution_date"),
+        ("order", "asc"),
+        ("apiKey", auth["params"]),
+    ]
 
     return session.get(url, params=args)
 
 
-# https://polygon.io/docs/get_vX_reference_tickers__ticker__anchor
+# https://polygon.io/docs/stocks/get_v3_reference_tickers__ticker
 def symbolDetail(session, symbol: str):
     """Endpoint returns dict of symbol details described at doc link.
 
@@ -91,7 +185,7 @@ def symbolDetail(session, symbol: str):
     Most useful for retrieving the current share count so we can calculate
     a live market cap using (share count * last trade price)."""
 
-    url = f"https://api.polygon.io/vX/reference/tickers/{symbol}"
+    url = f"https://api.polygon.io/v3/reference/tickers/{symbol}"
     args = {"apiKey": auth["params"]}
 
     return session.get(url, params=args)
@@ -109,9 +203,11 @@ def symbolFinancial(session, symbol: str):
     return session.get(url, params=args)
 
 
-def exchanges(session):
-    url = f"https://api.polygon.io/v1/meta/exchanges"
-    args = {"apiKey": auth["params"]}
+def exchanges(session, asset: str = "stocks"):
+    url = f"https://api.polygon.io/v3/reference/exchanges"
+
+    # Other assets include: options, crypto, fx
+    args = {"asset_class": asset, "apiKey": auth["params"]}
 
     return session.get(url, params=args)
 
@@ -129,6 +225,7 @@ def gainers(session):
 
 def losers(session):
     return gl(session, "losers")
+
 
 # https://polygon.io/docs/get_v2_snapshot_locale_us_markets_stocks_tickers_anchor
 def snapshot(session):
@@ -187,8 +284,8 @@ async def polygonConnect(cxn=None):
         ping_interval=90,
         ping_timeout=90,
         close_timeout=1,
-        max_queue=2 ** 32,
-        read_limit=2 ** 20,
+        max_queue=2**32,
+        read_limit=2**20,
     )
 
 
