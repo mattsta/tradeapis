@@ -13,17 +13,17 @@ pandas = "^1.2.4"
 arrow = "^1.1.0"
 lark = "^1.0.0"
 prettyprinter = "^0.18.0"
-cachetools = "^4.2.2"
+cachetools = "^5.2.0"
 pandas-market-calendars = "^3.4"
 loguru = "^0.6.0"
 
 # mutil = { git = "https://github.com/mattsta/mutil.git", tag="1.2.3" }
 mutil = { path = "../../mutil/", develop = true }
-python-dotenv = "^0.19.1"
+python-dotenv = "^0.20.0"
 beautifulsoup4 = "^4.11.1"
 
 [tool.poetry.dev-dependencies]
-pytest = "^6.2.5"
+pytest = "^7.1.2"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
