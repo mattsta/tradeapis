@@ -93,7 +93,13 @@ class MarketMetadata:
 
         Note: fetched result is cached on 5 minute boundaries."""
         content = await FetchCache(
-            self.session, FG_URL, "greed-fear", refreshMinutes=5
+            self.session,
+            FG_URL,
+            "greed-fear",
+            refreshMinutes=5,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0"
+            },
         ).get()
 
         j = orjson.loads(content)
