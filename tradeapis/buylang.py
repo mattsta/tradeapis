@@ -204,7 +204,8 @@ lang = r"""
 
     // Stock is anything else, but for our purpose can also be prefixed
     // with a contract namespace. Like STOCK:BTC vs. CRYPTO:BTC etc.
-    stock: /\/?[:A-Za-z\/\.]{1,10}/
+    // Also allow numbers for options like NQU2 etc
+    stock: /\/?[:A-Za-z0-9\/\.]{1,10}/
 
     single_order: stock | option
 

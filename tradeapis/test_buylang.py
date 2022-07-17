@@ -24,6 +24,13 @@ def test_stock_qty():
     ol = OLang()
     assert ol.parse(cmd) == result
 
+def test_stockr_qty():
+    cmd = "bto 3 aapl4"
+    result = OrderRequest(orders=[Order(Side.BTO, 3, "AAPL4")])
+
+    ol = OLang()
+    assert ol.parse(cmd) == result
+
 
 def test_stock_noqty():
     cmd = "bto aapl"
