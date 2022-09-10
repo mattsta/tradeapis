@@ -8,7 +8,7 @@ import re
 import os
 
 from loguru import logger
-from typing import Dict, List, Any, Union, Optional, Literal
+from typing import Dict, List, Any, Union, Optional, Literal, Iterable
 
 from dataclasses import dataclass, field
 import dataclasses
@@ -623,10 +623,13 @@ class TradierCredentials:
 
     # https://documentation.tradier.com/brokerage-api/streaming/wss-market-websocket
     def addWebsocketSymbols(
-        self, sessionId, symbols, filter=["quote", "summary", "timesale"]
+        self,
+        sessionId: str,
+        symbols: Iterable[str],
+        fields: Iterable[str] = ["quote", "summary", "timesale", "trade", "tradex"],
     ) -> bytes:
         return orjson.dumps(
-            dict(symbols=list(symbols), sessionid=sessionId, filter=filter)
+            dict(symbols=list(symbols), sessionid=sessionId, filter=list(fields))
         )
 
     async def populateStreamingSession(self):
@@ -656,7 +659,7 @@ class TradierCredentials:
         )
         self.sessionIdAccount = sessionIdResult["stream"]["sessionid"]
 
-    async def websocketSubscribe(self, ws, symbols):
+    async def websocketSubscribe(self, ws, symbols, fields):
         """Subscribe to symbols for streaming market data."""
         try:
             # If this is the first connection, create new ID
@@ -666,7 +669,7 @@ class TradierCredentials:
             logger.info("Subscribing to {}", symbols)
 
             # use saved ID
-            req = self.addWebsocketSymbols(self.sessionId, symbols)
+            req = self.addWebsocketSymbols(self.sessionId, symbols, fields)
             await ws.send(req)
             return True
         except:
@@ -1063,8 +1066,8 @@ class TradierClient:
     def websocketConnect(self, cxn=None):
         return self.cr.websocketConnect(cxn)
 
-    def websocketSubscribe(self, ws, symbols):
-        return self.cr.websocketSubscribe(ws, symbols)
+    def websocketSubscribe(self, ws, symbols, fields):
+        return self.cr.websocketSubscribe(ws, symbols, fields)
 
     def websocketConnectAccount(self, cxn=None):
         return self.cr.websocketConnectAccount(cxn)
