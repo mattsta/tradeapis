@@ -699,8 +699,8 @@ class TradierCredentials:
             ping_interval=10,
             ping_timeout=30,
             close_timeout=1,
-            max_queue=2 ** 32,
-            read_limit=2 ** 20,
+            max_queue=2**32,
+            read_limit=2**20,
         )
 
     # https://documentation.tradier.com/brokerage-api/streaming/wss-account-websocket
@@ -749,8 +749,8 @@ class TradierCredentials:
             ping_interval=10,
             ping_timeout=30,
             close_timeout=1,
-            max_queue=2 ** 32,
-            read_limit=2 ** 20,
+            max_queue=2**32,
+            read_limit=2**20,
         )
 
     # Continuous http stream of JSON payloads:

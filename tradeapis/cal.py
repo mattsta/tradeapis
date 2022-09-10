@@ -16,7 +16,7 @@ CALENDAR_CACHE_SECONDS = 60 * 60 * 6.5
 # max 6.5 hour timeout on calendar caching
 @cached(cache=TTLCache(maxsize=128, ttl=CALENDAR_CACHE_SECONDS))
 def getMarketCalendar(market: str, start=None, stop=None):
-    """ Return a market calendar describing market days with holidays/weekends excluded. """
+    """Return a market calendar describing market days with holidays/weekends excluded."""
     import pandas_market_calendars as mcal
 
     with Timer(f"Fetched Calendar {market}"):
@@ -34,7 +34,7 @@ def getMarketCalendar(market: str, start=None, stop=None):
 
 @cached(cache=TTLCache(maxsize=512, ttl=CALENDAR_CACHE_SECONDS // 2))
 def marketDaysAgo(daysBack: int, market="NASDAQ") -> tuple[pd.Timestamp, pd.Timestamp]:
-    """ Return (start, end) pd.Timestamp for 'daysBack' market days ago from now. """
+    """Return (start, end) pd.Timestamp for 'daysBack' market days ago from now."""
     # use dynamic start lookback date so we aren't pulling 2 years of calendar
     # days by default. The '* 3' provides a large enough buffer to counteract any
     # weekends/holidays.
@@ -60,7 +60,7 @@ def marketDaysAgo(daysBack: int, market="NASDAQ") -> tuple[pd.Timestamp, pd.Time
 
 
 def marketDaysBack(lookbackDays: Sequence[int], market="NASDAQ") -> list[pd.Timestamp]:
-    """ Return pd.Timestamp for days corresponding to N market days back for each N in 'lookbackDays' """
+    """Return pd.Timestamp for days corresponding to N market days back for each N in 'lookbackDays'"""
     lookbackDays = sorted(lookbackDays)
 
     # Default multiple higher than largest lookback for (huge) buffer against holidays/weekends
@@ -78,7 +78,7 @@ def marketDaysBack(lookbackDays: Sequence[int], market="NASDAQ") -> list[pd.Time
 
 
 def marketDaysBetweenDates(start, stop, market="NASDAQ") -> list[datetime.date]:
-    """ Return date objects for each market day between 'start' and 'stop' """
+    """Return date objects for each market day between 'start' and 'stop'"""
     dates = getMarketCalendar(market, start, stop)
 
     # still works fine if no dates are returned because the .market_open iterator

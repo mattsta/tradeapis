@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 from typing import Optional
 
+
 def mn(val):
-    """ format numeric input as money """
+    """format numeric input as money"""
 
     # We could use locale instead like:
     # >>> import locale
@@ -64,12 +65,12 @@ class OptionFees:
 
     @property
     def buys(self):
-        """ Returns list for all buy legs: [(contractCounts), (contractPrices)] """
+        """Returns list for all buy legs: [(contractCounts), (contractPrices)]"""
         return zip(*self.legs_buy)
 
     @property
     def sells(self):
-        """ Returns list for all sell legs: [(contractCounts), (contractPrices)] """
+        """Returns list for all sell legs: [(contractCounts), (contractPrices)]"""
         return zip(*self.legs_sell)
 
     def priceOf(self, legs):
@@ -81,32 +82,32 @@ class OptionFees:
 
     @property
     def sellPrice(self):
-        """ Total monetary inflow for the spread """
+        """Total monetary inflow for the spread"""
         return self.priceOf(self.legs_sell) * self.asells
 
     @property
     def buyPrice(self):
-        """ Total monetary outflow for the spread """
+        """Total monetary outflow for the spread"""
         return self.priceOf(self.legs_buy) * self.abuys
 
     @property
     def netPrice(self):
-        """ Total amount of spread sold or bought """
+        """Total amount of spread sold or bought"""
         return self.buyPrice - self.sellPrice
 
     @property
     def abuys(self):
-        """ Contract count for all buy legs """
+        """Contract count for all buy legs"""
         return sum([x[0] for x in self.legs_buy])
 
     @property
     def asells(self):
-        """ Contract count for all sell legs """
+        """Contract count for all sell legs"""
         return sum([x[0] for x in self.legs_sell])
 
     @property
     def contracts(self):
-        """ Contract count for all legs """
+        """Contract count for all legs"""
         return self.abuys + self.asells
 
     def mathPerLeg(self, legs, evalUsing):

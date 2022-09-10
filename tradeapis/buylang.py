@@ -98,7 +98,7 @@ class Order:
         return False
 
     def strike(self) -> Optional[float]:
-        """ If symbol is an OCC symbol, return strike price as a float. """
+        """If symbol is an OCC symbol, return strike price as a float."""
         if len(self.symbol) > 15:
             return int(self.symbol[-8:]) / 1000
 
@@ -119,11 +119,11 @@ class OrderRequest:
     end: Optional[datetime.datetime] = None
 
     def isSpread(self) -> bool:
-        """ True if more than 1 order is populated, False otherwise."""
+        """True if more than 1 order is populated, False otherwise."""
         return len(self.orders) > 1
 
     def isSingle(self) -> bool:
-        """ True if exactly 1 order is populated, False otherwise."""
+        """True if exactly 1 order is populated, False otherwise."""
         return len(self.orders) == 1
 
     def totalQuantity(self) -> float:
@@ -135,7 +135,7 @@ class OrderRequest:
         return sum(o.multiplier for o in self.orders) * self.size
 
     def fees(self) -> float:
-        """ Return all regulatory fees for spread (if prices are populated for orders)"""
+        """Return all regulatory fees for spread (if prices are populated for orders)"""
         legsBuy = [
             (o.multiplier * self.size, o.limit or 0) for o in self.orders if o.isBuy()
         ]
@@ -238,7 +238,7 @@ class TreeToOrder(Transformer):
 
     @v_args(inline=True)
     def single_order(self, got):
-        """ Single symbol representing a stock or option with no buy/sell side specified."""
+        """Single symbol representing a stock or option with no buy/sell side specified."""
         return [Order(Side.UNSET, 1, got.upper())]
 
     @v_args(inline=True)
@@ -264,7 +264,7 @@ class TreeToOrder(Transformer):
         return gots
 
     def qty(self, got):
-        """ Value is optional, so if not present, default to 1"""
+        """Value is optional, so if not present, default to 1"""
         if got:
             return int(got[0])
 
