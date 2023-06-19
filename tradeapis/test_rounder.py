@@ -3,10 +3,12 @@ import tradeapis.rounder as rounder
 
 # SPX
 def test_SPX_big_up():
-    assert rounder.round("SPX", 33.33) == 33.35
+    # "$0.10 increments >= $3"
+    assert rounder.round("SPX", 33.33) == 33.40
 
 
 def test_SPX_small_up():
+    # "$0.05 increments under $3"
     assert rounder.round("SPX", 1.22) == 1.25
 
 
@@ -24,7 +26,7 @@ def test_SPX_edge():
 
 # SPXW
 def test_SPXW_big_up():
-    assert rounder.round("SPXW", 33.33) == 33.35
+    assert rounder.round("SPXW", 33.33) == 33.40
 
 
 def test_SPXW_small_up():

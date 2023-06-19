@@ -24,17 +24,22 @@ class Product:
 
     def __post_init__(self) -> None:
         # enforce ticks from smallest to largest so our searching works properly
-        self.ticks = sorted(self.ticks, key=lambda x: x.least)
+        self.ticks = sorted(self.ticks, key=lambda x: x.least, reverse=True)
 
     def price(self, near: float, up: bool = True) -> float:
         """Return a valid product price rounded near the requested input price."""
+
+        assert near > 0
 
         # if no tick requirements, the input price is acceptable
         if not self.ticks:
             return near
 
         for tick in self.ticks:
-            if tick.least <= near:
+            # if requested price is ABOVE the search mark (Search from HIGHEST to LOWEST), then
+            # we found the correct trigger. else, try next lowest trigger.
+            # The final trigger is always "X > 0" which is a baseline else-catch-all condition.
+            if near > tick.least:
                 return roundnear(tick.tick, near, up)
 
         assert None, f"Failed to find matching tick? {self} :: {near}"
@@ -164,6 +169,7 @@ def round(symbol: str, price: float, up: bool = True) -> float:
       - option symbols must be the root or underlying symbol and NOT the full OCC symbol
       - you can bias the rounding for up or down with bool 'up' parameter
     """
+
     if symbol in SYMS:
         return SYMS[symbol].price(price, up)
 
