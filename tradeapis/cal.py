@@ -1,5 +1,6 @@
+from typing import Sequence
 import datetime
-from typing import Optional, Sequence
+import bisect
 
 import pandas as pd
 
@@ -12,6 +13,7 @@ CALENDAR_CACHE_SECONDS = 60 * 60 * 6.5
 
 # TODO: finish these abstractions and remove the copy/paste from mattplat.stats.*
 # and also replace into icli and tcli
+
 
 # max 6.5 hour timeout on calendar caching
 @cached(cache=TTLCache(maxsize=128, ttl=CALENDAR_CACHE_SECONDS))
@@ -84,3 +86,90 @@ def marketDaysBetweenDates(start, stop, market="NASDAQ") -> list[datetime.date]:
     # still works fine if no dates are returned because the .market_open iterator
     # will just return nothing, so we return an empty list.
     return [x.date() for x in dates.market_open]
+
+
+def marketLastDayOfWeekBetweenDates(
+    start, stop, market="NASDAQ"
+) -> list[datetime.date]:
+    """Return date objects for each last-day-of-week market day between 'start' and 'stop'
+
+    Note: this is smart enough to return Thursday if Friday is a holday, and normally Friday
+          for all other normal weeks."""
+    dates = getMarketCalendar(market, start, stop)
+
+    # still works fine if no dates are returned because the .market_open iterator
+    # will just return nothing, so we return an empty list.
+    return [x.date() for x in dates.resample("W-FRI").last().market_open]
+
+
+def indexExpirationDates(year: int) -> list[datetime.date]:
+    """Calculate the index expiration dates for a year.
+
+    Index futures expire on the third thursday of every end-of-quarter month.
+    """
+
+    expirations = []
+    # only iterate end-of-quarter months
+    for month in range(3, 13, 3):
+        # start at the first day of the month
+        third_thursday = datetime.date(year, month, 1)
+
+        # this looks weird as a while loop, but it's fine.
+        while third_thursday.weekday() != 4:  # Find the first Thursday then stop
+            third_thursday += datetime.timedelta(days=1)
+
+        # jump to the expiration thursday since we just found the first thursday in the loop
+        third_thursday += datetime.timedelta(days=14)
+
+        # collect
+        expirations.append(third_thursday)
+
+    return expirations
+
+
+def indexRollDates(year: int) -> list[datetime.date]:
+    """Calculate the logical "next roll forward dates" for futures in a year.
+
+    Index futures aren't continuous and "expire" the 3rd Thursday of every end of quarter month,
+    and the "roll forward date" is officially 4 days before the expiration: so, the Monday before
+    the 4th Thursday of the month is when most volume jumps to the next expiration quarter.
+
+    Also see: https://www.cmegroup.com/trading/equity-index/rolldates.html
+    """
+
+    # jump back to the monday before each expiration thursday
+    roll_forward_dates = [
+        x - datetime.timedelta(days=4) for x in indexExpirationDates(year)
+    ]
+    return roll_forward_dates
+
+
+def nextDateFor(what, start: datetime.date) -> datetime.date:
+    """Helper to abstract away the 'find next date accounting for end-of-year' condition.
+
+    Used by nextFuturesExpirationDate / nextFuturesRollDate for underlying date fetching.
+    """
+    month = start.month
+
+    # sleazy algorithm:
+    #   if NOT december, get current year expirations, bisect, return
+    #   IF december, get current year and next year, bisect, return
+
+    bis = what(start.year)
+    if month == 12:
+        bis += what(start.year + 1)
+
+    nextidx = bisect.bisect(bis, start)
+    return bis[nextidx]
+
+
+def nextFuturesExpirationDate(start: datetime.date) -> datetime.date:
+    """Return the next index futures expirations date given a start date."""
+
+    return nextDateFor(indexExpirationDates, start)
+
+
+def nextFuturesRollDate(start: datetime.date) -> datetime.date:
+    """Return the next index futures expirations date given a start date."""
+
+    return nextDateFor(indexRollDates, start)
