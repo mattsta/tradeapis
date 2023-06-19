@@ -12,7 +12,7 @@ import asyncio
 import websockets
 import aiohttp
 
-endpoint = "wss://socket.polygon.io/stocks"
+endpoint_stocks = "wss://socket.polygon.io/stocks"
 
 # TODO: refactor as better class encapsulation instead of being a module/env global.
 CONFIG = {**dotenv_values(".env.tradeapis"), **os.environ}
@@ -25,6 +25,7 @@ except:
 # Docs at:
 # https://polygon.io/sockets
 auth = {"action": "auth", "params": KEY}
+
 
 # https://polygon.io/docs/stocks/get_v3_trades__stockticker
 def historicalTrades(session, symbol: str, date: str):
@@ -64,11 +65,11 @@ def historicalQuotes(session, symbol: str, date: str):
     return session.get(url, params=args)
 
 
-async def readAll(what, session, *args):
+async def readAll(what, session, *args, **kwargs):
     """Use Polygon V3 API pattern to read an entire dataset via generator.
 
     Usage:
-        async for page in readAll(historicalTrades, session, symbol, date):
+        async for idx, page in readAll(historicalTrades, session, symbol, date):
             results = page.get("results")
 
     Also, the return is (idx, parsed) because we can't use enumerate() with
@@ -81,7 +82,7 @@ async def readAll(what, session, *args):
     idx = 0
     try:
         # First request intial result with a 'next' URL to fetch
-        orig = what(session, *args)
+        orig = what(session, *args, **kwargs)
         result = await (await orig).read()
         parsed = orjson.loads(result)
         yield idx, parsed
@@ -128,6 +129,37 @@ def historicalBars(
 
     # yes, "false" here is correct because args aren't JSON, it's all just int/string conversions
     args = {"sort": "asc", "unadjusted": "false", "apiKey": auth["params"]}
+
+    return session.get(url, params=args)
+
+
+# https://polygon.io/docs/options/get_v3_reference_options_contracts
+def optionsContracts(
+    session,
+    underlying: str,
+    contractType: str,
+    expirationDate: dict[str, str],
+    strikePrice: dict[str, str],
+):
+    """Endpoint returns options chains across date ranges and stripe price ranges.
+
+    expirationDate and strikePrice are dicts with one or more keys: lt, gt, lte, gte.
+
+    contractType is 'call' or 'put'
+    """
+
+    url = f"https://api.polygon.io/v3/reference/options/contracts"
+
+    # yes, string "true" / "false" here is correct because args aren't JSON, it's all just int/string conversions
+    args = {"sort": "expiration_date", "order": "asc", "apiKey": auth["params"]}
+    args |= dict(
+        underlying_ticker=underlying,
+        contract_type=contractType,
+        expired="true",
+        limit=1000,
+    )
+    args |= {f"expiration_date.{k}": v for k, v in expirationDate.items()}
+    args |= {f"strike_price.{k}": v for k, v in strikePrice.items()}
 
     return session.get(url, params=args)
 
@@ -280,7 +312,7 @@ async def polygonConnect(cxn=None):
             pass
 
     return await websockets.connect(
-        endpoint,
+        endpoint_stocks,
         ping_interval=90,
         ping_timeout=90,
         close_timeout=1,
@@ -302,6 +334,9 @@ async def polygonReconnect(cxn):
 class PolygonClient:
     async def setup(self):
         self.session = aiohttp.ClientSession()
+
+    async def shutdown(self):
+        await self.session.close()
 
     def snapshotOne(self, symbol: str):
         return snapshotOne(self.session, symbol)
