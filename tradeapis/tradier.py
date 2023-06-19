@@ -606,6 +606,10 @@ class TradierCredentials:
         # We intentionally don't return greeks because their greeks are only
         # updated once per hour by ORATS which doesn't make sense at all.
         args = {"symbol": symbol, "expiration": expiration, "greeks": "false"}
+
+        # Reminder: this API takes ONE SYMBOL and ONE DATE then returns live quotes
+        #           for ALL STRIKES for PUTS and CALLS with a single request.
+        # You can't request only puts or calls, so filter after retrieving if necessary.
         url, headers = self.urlHeaders("v1/markets/options/chains")
         return self.session.get(url, headers=headers, params=args)
 
@@ -696,8 +700,8 @@ class TradierCredentials:
         return await websockets.connect(
             "wss://ws.tradier.com/v1/markets/events",
             compression=None,
-            ping_interval=10,
-            ping_timeout=30,
+            ping_interval=5,
+            ping_timeout=5,
             close_timeout=1,
             max_queue=2**32,
             read_limit=2**20,
@@ -798,6 +802,9 @@ class TradierClient:
         self.cr = None
         self.session = None
 
+    async def shutdown(self):
+        await self.session.close()
+
     async def setup(self):
         try:
             self.session = aiohttp.ClientSession()
@@ -835,13 +842,16 @@ class TradierClient:
                 self.expirationAway("SHOP"),
             )
 
-    async def getQuoteAndAllOptionChains(self, symbol):
+    async def getQuoteAndAllOptionChains(self, symbol, dateRange=None):
         """Return all strikes across every date for stock symbol 'symbol'
         Note: the API doesn't allow us to filter out calls vs. puts, so you must manually
         filter those on the result set yourself.
 
         Also, we are fetching ALL dates which is a lot of detail for 3-4 weekly options like SPY/SPX.
         Future improvement would expose "get for date range only."
+
+        'dateRange' argument accepts number of future strikes to query chains for. If 'None'
+        then returns ALL date ranges.
         """
         # Steps:
         #  - get quote for underlying to base initial ITM/OTM guesses around
@@ -883,7 +893,7 @@ class TradierClient:
                 else:
                     assert "expirations" in got
                     # https://documentation.tradier.com/brokerage-api/markets/get-options-expirations
-                    dates = got["expirations"]["date"]
+                    dates = sorted(got["expirations"]["date"])[:dateRange]
             except:
                 # any data errors we just skip over everything
                 return None, None
