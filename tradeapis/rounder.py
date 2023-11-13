@@ -120,6 +120,15 @@ syms = [
         valuePerTick=0.50,
         multiplier=0.50,
     ),
+    Product(
+        symbol="/HE",
+        name="LEAN HOGS",
+        # NOTE: this should actually be 0.025, but our rounder truncates to 2 decimal places and
+        #       it breaks the math, so we have double width ticks here..... whoops.
+        ticks=[Tick(0.05)],
+        valuePerTick=20,  # technicaly the /HE ticks are $10 per 0.025, so instead of 0.025x10, we are using 0.05x20
+        multiplier=40000,
+    ),
     ## Index Options
     # https://www.cboe.com/tradable_products/sp_500/spx_options/specifications/
     Product(
@@ -152,6 +161,16 @@ syms = [
         symbol="VOLQ",
         name="NDX Volatility",
         ticks=Tick5_10,
+        multiplier=100,
+    ),
+    # BTC futures are in 0.25 increments...
+    # (but you also trade fractional quantities, so you have much
+    #  more fine grained pricing power than just $0.25 ticks by slicing your
+    #  8-decimal-precision quantity).
+    Product(
+        symbol="BTC",
+        name="BTC",
+        ticks=[Tick(0.25)],
         multiplier=100,
     ),
 ]
