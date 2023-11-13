@@ -962,8 +962,8 @@ class TradierClient:
     async def expirationAway(self, symbol, away=0):
         """Return the expiration date N expirations away.
 
-        Requesting 0 is usually a weekly unless it's SPXW/SPY/QQQ with
-        their 3 (M/W/Last) or 4 (M/W/Last + quarterly) expirations per week
+        Requesting 0 is usually a weekly unless it's SPXW with daily expirations
+        or SPY/QQQ with their 3 (M/W/Last) or 4 (M/W/Last + quarterly) expirations per week
         (or unless the symbol doesn't have weeklies).
 
         If you request too far ahead you probably get LEAPS if the symbol has them.

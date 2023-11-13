@@ -1,18 +1,21 @@
+import asyncio
+import os
 from collections.abc import Iterable
 
 from dataclasses import dataclass, field
-from dotenv import dotenv_values
-import os
 
-from loguru import logger
+import aiohttp
 import orjson
 
-import asyncio
-
 import websockets
-import aiohttp
+from dotenv import dotenv_values
 
-endpoint_stocks = "wss://socket.polygon.io/stocks"
+from loguru import logger
+
+ENDPOINT_STOCKS = "wss://socket.polygon.io/stocks"
+ENDPOINT_STOCKS_DELAYED = ENDPOINT_STOCKS.replace("socket", "delayed")
+ENDPOINT_OPTIONS = "wss://socket.polygon.io/options"
+ENDPOINT_OPTIONS_DELAYED = ENDPOINT_OPTIONS.replace("socket", "delayed")
 
 # TODO: refactor as better class encapsulation instead of being a module/env global.
 CONFIG = {**dotenv_values(".env.tradeapis"), **os.environ}
@@ -115,9 +118,15 @@ def fetchNext(session, result):
     return session.get(url + f"&apiKey={auth['params']}")
 
 
-# https://polygon.io/docs/get_v2_aggs_ticker__stocksTicker__range__multiplier___timespan___from___to__anchor
+# https://polygon.io/docs/stocks/get_v2_aggs_ticker__stocksticker__range__multiplier___timespan___from___to
 def historicalBars(
-    session, symbol: str, combine: int, timespan: str, dateFrom: str, dateTo: str
+    session,
+    symbol: str,
+    combine: int,
+    timespan: str,
+    dateFrom: str, # | int,
+    dateTo: str, #| int,
+    adjusted: bool = True,
 ):
     """Endpoint returns bars aggregated.
 
@@ -128,7 +137,12 @@ def historicalBars(
     url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/{combine}/{timespan}/{dateFrom}/{dateTo}"
 
     # yes, "false" here is correct because args aren't JSON, it's all just int/string conversions
-    args = {"sort": "asc", "unadjusted": "false", "apiKey": auth["params"]}
+    args = {
+        "sort": "asc",
+        "adjusted": str(adjusted).lower(),
+        "limit": 50000,
+        "apiKey": auth["params"],
+    }
 
     return session.get(url, params=args)
 
@@ -197,7 +211,7 @@ def splits(session, symbol: str, reverse=False):
     # doesn't overwrite the same shared key...
     args = [
         ("ticker", symbol),
-        ("reverse_split", reverse),
+        ("reverse_split", str(reverse).lower()),
         ("limit", 1000),
         ("sort", "ticker"),
         ("sort", "execution_date"),
@@ -279,15 +293,15 @@ def snapshotOne(session, symbol):
     return session.get(url, params=args)
 
 
-def askFor(method: str, channels: Iterable, symbols: Iterable):
+def askFor(method: str, channels: Iterable, symbols: Iterable) -> dict[str, str]:
     """Build the subscribe or unsubscribe PDU"""
     assert isinstance(channels, Iterable)
     assert isinstance(symbols, Iterable)
     # Channels are a list of one or more of:
-    # Trades: T
-    # Quotes: Q
-    # Second bars: A
-    # Minute bars: AM
+    #   - Trades: T
+    #   - Quotes: Q
+    #   - Second bars: A
+    #   - Minute bars: AM
     return {
         "action": method,
         "params": ",".join(
@@ -296,15 +310,15 @@ def askFor(method: str, channels: Iterable, symbols: Iterable):
     }
 
 
-def polygonSubscribe(channels: list, symbols: list):
+def polygonSubscribe(channels: list, symbols: list) -> dict[str, str]:
     return askFor("subscribe", channels, symbols)
 
 
-def polygonUnsubscribe(channels: list, symbols: list):
+def polygonUnsubscribe(channels: list, symbols: list) -> dict[str, str]:
     return askFor("unsubscribe", channels, symbols)
 
 
-async def polygonConnect(cxn=None):
+async def polygonConnect(cxn=None, endpoint=ENDPOINT_STOCKS):
     if cxn:
         try:
             await cxn.close()
@@ -312,7 +326,7 @@ async def polygonConnect(cxn=None):
             pass
 
     return await websockets.connect(
-        endpoint_stocks,
+        endpoint,
         ping_interval=90,
         ping_timeout=90,
         close_timeout=1,
