@@ -122,6 +122,9 @@ class OrderRequest:
         """True if more than 1 order is populated, False otherwise."""
         return len(self.orders) > 1
 
+    def symbols(self) -> list[str]:
+        return [o.symbol for o in self.orders]
+
     def isSingle(self) -> bool:
         """True if exactly 1 order is populated, False otherwise."""
         return len(self.orders) == 1
