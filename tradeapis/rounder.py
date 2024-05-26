@@ -2,7 +2,7 @@ from mutil.numeric import roundnear
 from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(slots=True)
 class Tick:
     # actual tick value for price rounding
     tick: float
@@ -13,7 +13,7 @@ class Tick:
     least: float = 0.0
 
 
-@dataclass
+@dataclass(slots=True)
 class Product:
     symbol: str
     name: str = ""
@@ -62,6 +62,7 @@ Tick5_10 = [Tick(0.05, 0), Tick(0.10, 3)]
 
 # I couldn't find an API for all futures and index option tick increment details so we could generate/update all of these automatically,
 # so we're going to manage this collection manually from various public records documents. shrug.
+# TODO: we should also consume the options Penny Pilot Program here to auto-detect $0.01-$0.05 vs $0.05-$0.10 increments per underlying.
 syms = [
     ## Index Futs
     Product(
