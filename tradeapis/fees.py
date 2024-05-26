@@ -28,23 +28,13 @@ class OptionFees:
 
     # Conditions (buys/sells) taken from: https://www.webull.com/pricing
     # Fee structure taken from "Fee Schedule" link at:
-    # https://brokerage.tradier.com/pricing
+    # https://tradier.com/individuals/pricing
+    # https://www.webull.com/pricing
 
-    # equivalent to a $22.10 fee per million dollars sold
-    # Update: fee lowered to $5.10 as of Feb 25, 2021
-    rate_sec: float = 0.00000510  # per dollar sold, min 0.01 per leg, SELLS ONLY
-
-    # this is an error in the tradier docs: it's 0.002 per option contract and
-    # TAF is 0.000119 per share for equity sales. Max is $5.95 per trade.
-    # (the robinhood docs have an error and says it's 0.002 per option SHARE which
-    #  would be 100x more than the actual value of 0.002 per option CONTRACT)
-    rate_taf: float = 0.002  # per contract, min 0.01 per leg, SELLS ONLY
-
-    # Is tis also an error in the tradier docs?
-    # All other brokers show a 0.0388 fee while tradier shows 0.05.
-    # Let's go with the actual 0.0388 fee since it's probably what Apex is charging.
-    rate_orf: float = 0.0388  # per contract, all, no maximum
-    rate_occ: float = 0.045  # per contract, all, max $55.00 per leg
+    rate_sec: float = 0.00002780  # per dollar sold, min 0.01 per leg, SELLS ONLY
+    rate_taf: float = 0.00279  # per CONTRACT, min 0.01 per leg, SELLS ONLY
+    rate_orf: float = 0.02685  # per contract, all, no maximum
+    rate_occ: float = 0.02  # per contract, all, max $55.00 per leg
 
     # Described as tuples (contractCount, contractPrice)
     # note: 'contractPrice' is the contract price, not the total price
