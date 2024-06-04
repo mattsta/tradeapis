@@ -208,7 +208,7 @@ lang = r"""
     // Stock is anything else, but for our purpose can also be prefixed
     // with a contract namespace. Like STOCK:BTC vs. CRYPTO:BTC etc.
     // Also allow numbers for options like NQU2 etc
-    stock: /\/?[:A-Za-z0-9\/\.]{1,10}/
+    stock: /\/?[:A-Za-z0-9\/\._]{1,10}/
 
     single_order: stock | option
 
@@ -246,7 +246,9 @@ class TreeToOrder(Transformer):
 
     @v_args(inline=True)
     def stock(self, got):
-        return got
+        # We use '_' in place of spaces where IBKR expects them
+        # (because spaces conflict with our generic spread parsing logic)
+        return got.replace("_", " ")
 
     @v_args(inline=True)
     def option(self, got):
