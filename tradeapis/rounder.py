@@ -1,4 +1,4 @@
-from mutil.numeric import roundnear
+from mutil.numeric import roundnear, ROUND
 from dataclasses import dataclass, field
 
 
@@ -19,8 +19,14 @@ class Product:
     name: str = ""
     ticks: list[Tick] = field(default_factory=list)
 
+    # stirng of futures month specificationsin F-Z format.
+    months: str = ""
+
     valuePerTick: float = 1.0
     multiplier: float = 1
+
+    # default 2 decimal places, but we can override for more detailed symbol requirements...
+    decimals: int = 2
 
     def __post_init__(self) -> None:
         # enforce ticks from smallest to largest so our searching works properly
@@ -40,7 +46,9 @@ class Product:
             # we found the correct trigger. else, try next lowest trigger.
             # The final trigger is always "X > 0" which is a baseline else-catch-all condition.
             if near > tick.least:
-                return roundnear(tick.tick, near, up)
+                return roundnear(
+                    tick.tick, near, ROUND.UP if up else ROUND.DOWN, self.decimals
+                )
 
         assert None, f"Failed to find matching tick? {self} :: {near}"
 
@@ -124,11 +132,10 @@ syms = [
     Product(
         symbol="/HE",
         name="LEAN HOGS",
-        # NOTE: this should actually be 0.025, but our rounder truncates to 2 decimal places and
-        #       it breaks the math, so we have double width ticks here..... whoops.
-        ticks=[Tick(0.05)],
-        valuePerTick=20,  # technicaly the /HE ticks are $10 per 0.025, so instead of 0.025x10, we are using 0.05x20
-        multiplier=40000,
+        ticks=[Tick(0.025)],
+        decimals=3,
+        valuePerTick=10,
+        multiplier=40_000,
     ),
     ## Index Options
     # https://www.cboe.com/tradable_products/sp_500/spx_options/specifications/
