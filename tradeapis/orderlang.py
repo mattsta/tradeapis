@@ -22,7 +22,19 @@ pp.install_extras(["dataclasses"], warn_on_error=False)
 
 import datetime
 
-KIND = Enum("KIND", "SHARES CASH")
+
+# fmt: off
+class DecimalPrice(Decimal): ...
+class DecimalPercent(Decimal): ...
+class DecimalShares(Decimal): ...
+class DecimalCash(Decimal): ...
+class DecimalLong(Decimal): ...
+class DecimalShort(Decimal): ...
+class DecimalLongCash(DecimalLong, DecimalCash): ...
+class DecimalLongShares(DecimalLong, DecimalShares): ...
+class DecimalShortShares(DecimalShort, DecimalShares): ...
+class DecimalShortCash(DecimalShort, DecimalCash): ...
+# fmt: on
 
 
 @dataclass(slots=True)
@@ -32,48 +44,122 @@ class OrderIntent:
     symbol: str | None = None
     algo: str | None = None
 
-    kind: KIND | None = None
+    # You can optionally provide an exchange for this order if you have specific requirements.
+    exchange: str | None = None
 
-    isLong: bool = True
+    # Quantity is always represented as a POSITIVE VALUE which is then
+    # designated long or short by its type. The type can easily be
+    # meta-checked via the property handlers.
+    # Reason: trading APIs usually say "BUY 100" or "SELL 100" and not "BUY -100" or "SELL -100",
+    #         so we maintain quantity as POSITIVE while the BUY/SELL intent is a property of the
+    #         order itself we can introspect when needed.
+    qty: (
+        DecimalLongShares
+        | DecimalShortShares
+        | DecimalLongCash
+        | DecimalShortCash
+        | None
+    ) = None
 
     bracketProfitAlgo: str = "LMT"
     bracketLossAlgo: str = "STP"
 
-    limit: float | None = None
+    limit: DecimalPrice | None = None
 
-    # of type noted by KIND
-    qty: float | Decimal | str | None = None
-
-    bracketProfit: float | None = None
-    bracketLoss: float | None = None
-
-    bracketProfitIsPercent: bool = False
-    bracketLossIsPercent: bool = False
+    bracketProfit: DecimalPrice | DecimalPercent | None = None
+    bracketLoss: DecimalPrice | DecimalPercent | None = None
 
     preview: bool = False
+
+    @property
+    def isLong(self) -> bool:
+        return isinstance(self.qty, DecimalLong)
+
+    @property
+    def isShares(self) -> bool:
+        return isinstance(self.qty, DecimalShares)
+
+    @property
+    def isMoney(self) -> bool:
+        return isinstance(self.qty, DecimalCash)
+
+    @property
+    def isBracketProfitPercent(self) -> bool:
+        return isinstance(self.bracketProfit, DecimalPercent)
+
+    @property
+    def isBracketLossPercent(self) -> bool:
+        return isinstance(self.bracketLoss, DecimalPercent)
+
+    @property
+    def shortFix(self) -> int:
+        """Indicates if we need to invert the direction of some math to compensate for short profit."""
+        return 1 if self.isLong else -1
+
+    @property
+    def bracketProfitReal(self) -> Decimal:
+        """Generate the _actual_ bracket profit value given the current limit price.
+
+        Takes care of both direction (long vs. short) and value (percent vs. exact).
+
+        NOTE: this interperts the bracket request as POINTS AWAY FROM THE LIMIT PRICE and NOT THE FULL BRACKET EXIT PRICE.
+
+        This means if your limit is $10 and your bracketProfit is $3, this generates a bracketProfitReal == $13.
+
+        You can of course avoid using bracketProfitReal and treat bracketProfit as any value you like as well."""
+
+        # if percent, extract percent of whole to use for addition
+        bracketProfit = self.bracketProfit
+        if self.isBracketProfitPercent:
+            bracketProfit = self.limit * self.bracketProfit / 100
+
+        # else, the bracket price requested is the EXACT price to limit
+        return self.limit + (bracketProfit * self.shortFix)
+
+    @property
+    def bracketLossReal(self) -> Decimal:
+        """Generate the _actual_ bracket loss value given the current limit price.
+
+        Takes care of both direction (long vs. short) and value (percent vs. exact).
+
+        See notes in bracketProfitReal() about how the bracket prices are treated for exit here."""
+
+        # if percent, do basically:  PRICE * 1.profitPercent
+        # if percent, extract percent of whole to use for subtraction
+        bracketLoss = self.bracketLoss
+        if self.isBracketLossPercent:
+            bracketLoss = self.limit * self.bracketLoss / 100
+
+        # else, the bracket price requested is the EXACT price to limit
+        return self.limit - (bracketLoss * self.shortFix)
 
 
 lang = r"""
 
     // BUY something
-    // SYMBOL SHARES|PRICE_QUANTITY ALGO [@ LIMIT_PRICE [+ PROFIT ALGO | - LOSS ALGO | ± EQUAL_PROFIT_LOSS ALGO_PROFIT ALGO_LOSS]] [preview]
-    cmd: symbol quantity orderalgo limit? preview?
+    // SYMBOL SHARES|PRICE_QUANTITY ALGO [on EXCHANGE] [@ LIMIT_PRICE [+ PROFIT_POINTS ALGO | - LOSS_POINTS ALGO | ± EQUAL_PROFIT_LOSS_POINTS ALGO_PROFIT ALGO_LOSS]] [preview]
+    cmd: symbol quantity orderalgo exchange? limit? preview?
 
+
+    // TODO: we could actually use buylang to parse symbol allowing full spread descriptions here too, but
+    //       then we would need to include the buylang Order() object instaed of just a symbol string in our OrderIntent() output.
     symbol: /\/?[:A-Za-z0-9\/\._]{1,15}/
 
-    quantity: shares | shares_short | cash_amount | cash_amount_short
+    quantity: shares_short | shares_long | cash_amount_long | cash_amount_short
 
-    shares: price
-    shares_short: "-" shares
-    cash_amount: "$" price
-    cash_amount_short: "-" cash_amount
+    shares_short: "-" price
+    shares_long: price
+    cash_amount_long: "$" price
+    cash_amount_short: ("-$" | "$-") price
 
     orderalgo: /[A-Za-z_]+/
     algo: /[A-Za-z_]+/
 
     limit: "@" price (profit | loss | bracket)*
 
-    // PRICE is a helper for "float parsing with optional , or _ allowed"
+    exchange: "ON"i /[A-Za-z]+/
+
+    // PRICE is a helper for "float parsing with optional , or _ allowed" also with unlimited decimal precision allowed
     price: /[0-9_,]+\.?[0-9]*/
 
     is_percentage: "%"
@@ -114,29 +200,34 @@ class TreeToBuy(Transformer):
         self.b.symbol = got.replace("_", " ").upper()
 
     @v_args(inline=True)
-    def shares(self, got):
-        self.b.qty = Decimal(got)
-        self.b.kind = KIND.SHARES
+    def shares_long(self, got):
+        self.b.qty = DecimalLongShares(got)
 
     @v_args(inline=True)
-    def cash_amount(self, got):
-        self.b.qty = Decimal(got)
-        self.b.kind = KIND.CASH
+    def shares_short(self, got):
+        self.b.qty = DecimalShortShares(got)
+
+    @v_args(inline=True)
+    def cash_amount_long(self, got):
+        self.b.qty = DecimalLongCash(got)
+
+    @v_args(inline=True)
+    def cash_amount_short(self, got):
+        self.b.qty = DecimalShortCash(got)
 
     @v_args(inline=True)
     def limit(self, got, *extra):
-        self.b.limit = Decimal(got)
+        self.b.limit = DecimalPrice(got)
+
+    @v_args(inline=True)
+    def exchange(self, got):
+        """Allow users to also tell us their desired exchange. Supah Fancy."""
+        self.b.exchange = str(got).upper()
 
     @v_args(inline=True)
     def orderalgo(self, got):
         """A bit of a hack: we are special casing the limit algo to place it directly."""
         self.b.algo = str(got).upper()
-
-    def shares_short(self, got):
-        self.b.isLong = False
-
-    def cash_amount_short(self, got):
-        self.b.isLong = False
 
     @v_args(inline=True)
     def algo(self, got):
@@ -148,7 +239,7 @@ class TreeToBuy(Transformer):
 
     @v_args(inline=True)
     def price(self, got):
-        return Decimal(got.replace("_", "").replace(",", ""))
+        return DecimalPrice(got.replace("_", "").replace(",", ""))
 
     @v_args(inline=True)
     def profit(self, got, *algo):
@@ -156,7 +247,7 @@ class TreeToBuy(Transformer):
 
         if algo:
             if algo[0] is True:
-                self.b.bracketProfitIsPercent = True
+                self.b.bracketProfit = DecimalPercent(got)
                 algo = algo[1:]
 
             if algo:
@@ -164,6 +255,7 @@ class TreeToBuy(Transformer):
 
     @v_args(inline=True)
     def is_percentage(self):
+        # This is consumed under profit() and loss() directly as a 2-component 'algo' param.
         return True
 
     @v_args(inline=True)
@@ -172,7 +264,7 @@ class TreeToBuy(Transformer):
 
         if algo:
             if algo[0] is True:
-                self.b.bracketLossIsPercent = True
+                self.b.bracketLoss = DecimalPercent(got)
                 algo = algo[1:]
 
             if algo:
