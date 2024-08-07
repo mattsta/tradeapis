@@ -137,7 +137,7 @@ class OrderIntent:
 lang = r"""
 
     // BUY something
-    // SYMBOL SHARES|PRICE_QUANTITY ALGO [on EXCHANGE] [@ LIMIT_PRICE [+ PROFIT_POINTS ALGO | - LOSS_POINTS ALGO | ± EQUAL_PROFIT_LOSS_POINTS ALGO_PROFIT ALGO_LOSS]] [preview]
+    // SYMBOL SHARES|PRICE_QUANTITY ALGO [on EXCHANGE] [@ LIMIT_PRICE? [+ PROFIT_POINTS ALGO | - LOSS_POINTS ALGO | ± EQUAL_PROFIT_LOSS_POINTS ALGO_PROFIT ALGO_LOSS]] [preview]
     cmd: symbol quantity orderalgo exchange? limit? preview?
 
 
@@ -155,7 +155,7 @@ lang = r"""
     orderalgo: /[A-Za-z_]+/
     algo: /[A-Za-z_]+/
 
-    limit: "@" price (profit | loss | bracket)*
+    limit: "@" price? (profit | loss | bracket)*
 
     exchange: "ON"i /[A-Za-z]+/
 
@@ -216,8 +216,13 @@ class TreeToBuy(Transformer):
         self.b.qty = DecimalShortCash(got)
 
     @v_args(inline=True)
-    def limit(self, got, *extra):
-        self.b.limit = DecimalPrice(got)
+    def limit(self, *gotextra):
+        # the limit price is now extra, but this rule still triggers.
+        # Example: AAPL 100 AF @ - 3
+        # (has no limit order, but still populates the limit with 'gotextra' of [None])
+        if gotextra and gotextra[0]:
+            got = gotextra[0]
+            self.b.limit = DecimalPrice(got)
 
     @v_args(inline=True)
     def exchange(self, got):

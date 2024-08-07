@@ -224,6 +224,25 @@ def test_stock_limit_down_up():
     assert ol.parse(cmd) == result
 
 
+def test_stock_limit_down_up_no_limit():
+    # Test creating order with no limit price but still full bracket details.
+    # (Such a setup lets a client back-populate orderintent.limit *itself* with
+    #  a dynamically determined future price then still use the bracket profit/loss
+    #  encapsulation system to determine the final values for ordering).
+    cmd = "AAPL -100 REL @ - 4.44 + 2.22"
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalShortShares(100),
+        algo="REL",
+        limit=None,
+        bracketProfit=Decimal("2.22"),
+        bracketLoss=Decimal("4.44"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
 def test_stock_limit_down_up_algos():
     cmd = "AAPL -100 REL @ 33.33 - 4.44 ABC + 2.22 DEf"
     result = OrderIntent(
@@ -248,6 +267,21 @@ def test_stock_limit_down_up_bracket_override():
         qty=DecimalLongShares(100),
         algo="REL",
         limit=Decimal("33.33"),
+        bracketProfit=Decimal("6"),
+        bracketLoss=Decimal("6"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_limit_down_up_bracket_single():
+    cmd = "AAPL 100 REL @ ± 6"
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        limit=None,
         bracketProfit=Decimal("6"),
         bracketLoss=Decimal("6"),
     )
