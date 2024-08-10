@@ -76,6 +76,32 @@ class OrderIntent:
         return isinstance(self.qty, DecimalLong)
 
     @property
+    def isShort(self) -> bool:
+        return not self.isLong
+
+    @property
+    def isLive(self) -> bool:
+        """A "live" price request is a full OrderIntent just with no limit price.
+
+        The user can interpert live prices to mean either MKT orders or determine live
+        prices not requiring user input.
+
+        Allowing "live" syntax also lets us still specify bracket endpoints against an unknown
+        price at time of order entry."""
+        return self.limit is not None
+
+    @property
+    def isCredit(self) -> bool:
+        """Detect if this OrderIntent is an explicit credit event (negative price).
+
+        Credit events are different from short invents because credits can also have
+        negative quantities (shorts) and we need to adjust our bracket profit/loss math
+        against having both negative prices and negative quantities so the directions
+        for profit remains correct (profit for short == lower price and profit for credit
+        also == lower price, so these must not conflict)."""
+        return self.limit < 0
+
+    @property
     def isShares(self) -> bool:
         return isinstance(self.qty, DecimalShares)
 
@@ -94,6 +120,18 @@ class OrderIntent:
     @property
     def shortFix(self) -> int:
         """Indicates if we need to invert the direction of some math to compensate for short profit."""
+
+        # It is up to the user to verify if the short qty vs. price makes sense for their platform.
+        # For example, on IBKR, you can have:
+        #  - short quantity and negative price on a short spread (receive credit)
+        #  - short quantity and positive price on a short spread (buy for debit)
+        #  - long quantity and positive price on a short spread (receive credit)
+        #  - short quantity and positive price on a short spread (buy for debit)
+        #  - long quantity and positive price on a long spread (buy for debit)
+        #  - short quantity and positive price on a long spread (receive credit)
+        # Basically, IBKR will reject "long quantity with short price" even though we allow this configuration
+        # in the grammar here, so the order processing _can_ reject some valid things parsed here if you get
+        # your combinations wrong or backwards (but order previews/rejections fix those scenarios).
         return 1 if self.isLong else -1
 
     @property
@@ -104,7 +142,7 @@ class OrderIntent:
 
         NOTE: this interperts the bracket request as POINTS AWAY FROM THE LIMIT PRICE and NOT THE FULL BRACKET EXIT PRICE.
 
-        This means if your limit is $10 and your bracketProfit is $3, this generates a bracketProfitReal == $13.
+        This means if your qty is long and limit is $10 and your bracketProfit is $3, this generates a bracketProfitReal == $13.
 
         You can of course avoid using bracketProfitReal and treat bracketProfit as any value you like as well."""
 
@@ -112,6 +150,11 @@ class OrderIntent:
         bracketProfit = self.bracketProfit
         if self.isBracketProfitPercent:
             bracketProfit = self.limit * self.bracketProfit / 100
+
+        # credits have a NEGATIVE price which we need to invert for the loss math (regardless of short/long qty)
+        # (e.g. profit for CREDIT=-3 PROFIT=2 LOSS=4 means final values are profit=(-(-3) - 2)=1 loss=(-(-3) + 4)=7)
+        if self.isCredit:
+            return -self.limit - bracketProfit
 
         # else, the bracket price requested is the EXACT price to limit
         return self.limit + (bracketProfit * self.shortFix)
@@ -130,6 +173,10 @@ class OrderIntent:
         if self.isBracketLossPercent:
             bracketLoss = self.limit * self.bracketLoss / 100
 
+        # credits have a NEGATIVE price which we need to invert for the loss math (regardless of short/long qty)
+        if self.isCredit:
+            return -self.limit + bracketLoss
+
         # else, the bracket price requested is the EXACT price to limit
         return self.limit - (bracketLoss * self.shortFix)
 
@@ -137,7 +184,7 @@ class OrderIntent:
 lang = r"""
 
     // BUY something
-    // SYMBOL SHARES|PRICE_QUANTITY ALGO [on EXCHANGE] [@ LIMIT_PRICE? [+ PROFIT_POINTS ALGO | - LOSS_POINTS ALGO | ± EQUAL_PROFIT_LOSS_POINTS ALGO_PROFIT ALGO_LOSS]] [preview]
+    // SYMBOL SHARES|PRICE_QUANTITY ALGO ["on" EXCHANGE] [@ [["credit"? LIMIT_PRICE] | "live"] [+ PROFIT_POINTS ALGO | - LOSS_POINTS ALGO | ± EQUAL_PROFIT_LOSS_POINTS ALGO_PROFIT ALGO_LOSS]] [preview]
     cmd: symbol quantity orderalgo exchange? limit? preview?
 
 
@@ -155,7 +202,11 @@ lang = r"""
     orderalgo: /[A-Za-z_]+/
     algo: /[A-Za-z_]+/
 
-    limit: "@" price? (profit | loss | bracket)*
+    limit: "@" (price | "live"i | credit) (profit | loss | bracket)*
+
+    // credit spreads require a NEGATIVE price for us to receive money (or exiting a debit spread),
+    // so we need an extra identifier to distinguish between stop loss '-' and credit limit price '-' requests
+    credit: "credit"i "-" price
 
     exchange: "ON"i /[A-Za-z]+/
 
@@ -223,6 +274,12 @@ class TreeToBuy(Transformer):
         if gotextra and gotextra[0]:
             got = gotextra[0]
             self.b.limit = DecimalPrice(got)
+
+    @v_args(inline=True)
+    def credit(self, got):
+        # credit requests are just a negative limit price
+        # ("got" is already a DecimalPrice()  here from the 'price' rule)
+        self.b.limit = -got
 
     @v_args(inline=True)
     def exchange(self, got):

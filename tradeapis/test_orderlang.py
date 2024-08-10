@@ -229,7 +229,7 @@ def test_stock_limit_down_up_no_limit():
     # (Such a setup lets a client back-populate orderintent.limit *itself* with
     #  a dynamically determined future price then still use the bracket profit/loss
     #  encapsulation system to determine the final values for ordering).
-    cmd = "AAPL -100 REL @ - 4.44 + 2.22"
+    cmd = "AAPL -100 REL @ live - 4.44 + 2.22"
     result = OrderIntent(
         symbol="AAPL",
         qty=DecimalShortShares(100),
@@ -276,7 +276,7 @@ def test_stock_limit_down_up_bracket_override():
 
 
 def test_stock_limit_down_up_bracket_single():
-    cmd = "AAPL 100 REL @ ± 6"
+    cmd = "AAPL 100 REL @ live ± 6"
     result = OrderIntent(
         symbol="AAPL",
         qty=DecimalLongShares(100),
@@ -288,6 +288,61 @@ def test_stock_limit_down_up_bracket_single():
 
     ol = OrderLang()
     assert ol.parse(cmd) == result
+
+
+def test_stock_limit_down_up_bracket_single():
+    cmd = "AAPL 100 REL @ credit -6"
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        limit=Decimal("-6"),
+        bracketProfit=None,
+        bracketLoss=None,
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_limit_down_up_bracket_single_bracket():
+    cmd = "AAPL 100 REL @ credit -6 + 3 - 1"
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        limit=Decimal("-6"),
+        bracketProfit=Decimal("3"),
+        bracketLoss=Decimal("1"),
+    )
+
+    ol = OrderLang()
+
+    oi = ol.parse(cmd)
+    assert oi == result
+
+    assert oi.bracketProfitReal == Decimal("3")
+    assert oi.bracketLossReal == Decimal("7")
+
+
+def test_stock_limit_down_up_bracket_single_bracket_double_short():
+    cmd = "AAPL -100 REL @ credit -6 + 3 - 1"
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalShortShares(100),
+        algo="REL",
+        limit=Decimal("-6"),
+        bracketProfit=Decimal("3"),
+        bracketLoss=Decimal("1"),
+    )
+
+    ol = OrderLang()
+
+    oi = ol.parse(cmd)
+    assert oi == result
+
+    assert oi.bracketProfitReal == Decimal("3")
+    assert oi.bracketLossReal == Decimal("7")
 
 
 def test_stock_limit_down_up_bracket_override_algos():

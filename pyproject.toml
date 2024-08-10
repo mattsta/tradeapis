@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tradeapis"
-version = "3.2.3"
+version = "3.2.4"
 description = "Stock Market Data Utilities and API Wrappers for Tradier, Polygon"
 authors = ["Matt Stancliff <matt@genges.com>"]
 license = "Apache-2.0"
