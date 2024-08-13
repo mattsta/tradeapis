@@ -190,7 +190,7 @@ lang = r"""
 
     // TODO: we could actually use buylang to parse symbol allowing full spread descriptions here too, but
     //       then we would need to include the buylang Order() object instaed of just a symbol string in our OrderIntent() output.
-    symbol: /\/?[:A-Za-z0-9\/\._]{1,15}/
+    symbol: /\/?[:A-Za-z0-9\/\._-]{1,15}/ | /".*"/ | /'.*'/
 
     quantity: shares_short | shares_long | cash_amount_long | cash_amount_short
 
@@ -250,6 +250,12 @@ class TreeToBuy(Transformer):
         self.b = OrderIntent()
         self.b.symbol = got.replace("_", " ").upper()
 
+        # if this was a quoted input, remove quotes for the actual symbol storage
+        # (basically: if input was:
+        #  - "buy 100 AAPL" 1 AF
+        #  - then store symbol="BUY 100 AAPL" instead of the default retained quotes as symbol="\"BUY 100 AAPL\""
+        self.b.symbol = self.b.symbol.replace("'", "").replace('"', "")
+
     @v_args(inline=True)
     def shares_long(self, got):
         self.b.qty = DecimalLongShares(got)
@@ -271,7 +277,8 @@ class TreeToBuy(Transformer):
         # the limit price is now extra, but this rule still triggers.
         # Example: AAPL 100 AF @ - 3
         # (has no limit order, but still populates the limit with 'gotextra' of [None])
-        if gotextra and gotextra[0]:
+        # Note: we use 'is not None' here because 0 *is* a valid price we can attempt.
+        if gotextra and gotextra[0] is not None:
             got = gotextra[0]
             self.b.limit = DecimalPrice(got)
 

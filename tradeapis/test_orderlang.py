@@ -25,6 +25,76 @@ def test_stock():
     assert ol.parse(cmd) == result
 
 
+def test_stock_by_position():
+    cmd = ":13 100 REL"
+    result = OrderIntent(symbol=":13", qty=DecimalLongShares(100), algo="REL")
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_by_negative_position():
+    cmd = ":-1 100 REL"
+    result = OrderIntent(symbol=":-1", qty=DecimalLongShares(100), algo="REL")
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted():
+    cmd = "'AAPL' 100 REL"
+    result = OrderIntent(symbol="AAPL", qty=DecimalLongShares(100), algo="REL")
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes():
+    cmd = '"AAPL" 100 REL'
+    result = OrderIntent(symbol="AAPL", qty=DecimalLongShares(100), algo="REL")
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_zero_price_is_zero():
+    cmd = '"AAPL" 100 REL @ 0'
+    result = OrderIntent(
+        symbol="AAPL", qty=DecimalLongShares(100), algo="REL", limit=Decimal(0)
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_big():
+    cmd = "'buy 100 AAPL sell 100 TSLA' 1 REL"
+    result = OrderIntent(
+        symbol="BUY 100 AAPL SELL 100 TSLA", qty=DecimalLongShares(1), algo="REL"
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_big_quotes():
+    cmd = '"buy 100 AAPL sell 100 TSLA" 1 REL'
+    result = OrderIntent(
+        symbol="BUY 100 AAPL SELL 100 TSLA", qty=DecimalLongShares(1), algo="REL"
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_space():
+    cmd = "'BRK B' 100 REL"
+    result = OrderIntent(symbol="BRK B", qty=DecimalLongShares(100), algo="REL")
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
 def test_stock_short():
     cmd = "AAPL -100 REL"
     result = OrderIntent(symbol="AAPL", qty=DecimalLongShares(100), algo="REL")
