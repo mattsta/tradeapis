@@ -68,6 +68,22 @@ def test_stock_quoted_quotes_zero_price_is_zero():
     assert ol.parse(cmd) == result
 
 
+def test_stock_quoted_quotes_zero_price_is_zero_also_no_qty():
+    cmd = '"AAPL" all REL @ 0'
+    result = OrderIntent(symbol="AAPL", qty=None, algo="REL", limit=Decimal(0))
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_zero_price_is_zero_also_no_qty_preview():
+    cmd = '"AAPL" all REL preview'
+    result = OrderIntent(symbol="AAPL", qty=None, algo="REL", preview=True)
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
 def test_stock_quoted_quotes_zero_price_is_zero_also_no_qty_preview_again():
     cmd = "MSFT241220C00500000 all REL preview"
     result = OrderIntent(

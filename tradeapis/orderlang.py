@@ -54,6 +54,8 @@ class OrderIntent:
     # Reason: trading APIs usually say "BUY 100" or "SELL 100" and not "BUY -100" or "SELL -100",
     #         so we maintain quantity as POSITIVE while the BUY/SELL intent is a property of the
     #         order itself we can introspect when needed.
+    # Also, we retain using 'None' for quantity if user has requested "ALL" quantity (so the consuming
+    # program can look up how much current quantity a position has for a symbol for exiting against, probably).
     qty: (
         DecimalLongShares
         | DecimalShortShares
@@ -193,12 +195,13 @@ lang = r"""
     //       then we would need to include the buylang Order() object instaed of just a symbol string in our OrderIntent() output.
     symbol: /\/?[:A-Za-z0-9\/\._-]{1,21}/ | /".*"/ | /'.*'/
 
-    quantity: shares_short | shares_long | cash_amount_long | cash_amount_short
+    quantity: shares_short | shares_long | cash_amount_long | cash_amount_short | qty_all
 
     shares_short: "-" price
     shares_long: price
     cash_amount_long: "$" price
     cash_amount_short: ("-$" | "$-") price
+    qty_all: "all"i
 
     orderalgo: /[A-Za-z_]+/
     algo: /[A-Za-z_]+/
@@ -280,6 +283,11 @@ class TreeToBuy(Transformer):
         self.b.qty = DecimalShortCash(got)
 
     @v_args(inline=True)
+    def qty_all(self):
+        """If user says qty is all, then we use None to mean "no qty requested, look it up yourself."""
+        self.b.qty = None
+
+    @v_args(inline=True)
     def limit(self, *gotextra):
         # the limit price is now extra, but this rule still triggers.
         # Example: AAPL 100 AF @ - 3
@@ -287,7 +295,7 @@ class TreeToBuy(Transformer):
         # Note: we use 'is not None' here because 0 *is* a valid price we can attempt.
         if gotextra and gotextra[0] is not None:
             got = gotextra[0]
-            self.b.limit = DecimalPrice(got)
+            self.b.limit = got
 
     @v_args(inline=True)
     def calculation(self, *got):
