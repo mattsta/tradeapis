@@ -67,6 +67,16 @@ def test_stock_quoted_quotes_zero_price_is_zero():
     assert ol.parse(cmd) == result
 
 
+def test_stock_quoted_quotes_zero_price_is_zero_also_no_qty_preview_again():
+    cmd = "MSFT241220C00500000 all REL preview"
+    result = OrderIntent(
+        symbol="MSFT241220C00500000", qty=None, algo="REL", preview=True
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
 def test_stock_quoted_big():
     cmd = "'buy 100 AAPL sell 100 TSLA' 1 REL"
     result = OrderIntent(
