@@ -94,6 +94,20 @@ def test_stock_quoted_quotes_zero_price_is_zero_also_no_qty_preview_again():
     assert ol.parse(cmd) == result
 
 
+def test_stock_quoted_quotes_zero_price_is_zero_config():
+    cmd = '"AAPL" 100 REL @ 0 conf red=blue sad happy start=vwap2'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        limit=Decimal(0),
+        config=dict(red="blue", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
 def test_stock_quoted_quotes_and_calculator():
     cmd = '"AAPL" 100 REL @ (/ 100 3)'
     result = OrderIntent(

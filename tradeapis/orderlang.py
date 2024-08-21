@@ -12,7 +12,6 @@ from lark import UnexpectedToken, UnexpectedCharacters
 
 import prettyprinter as pp  # type: ignore
 
-from itertools import chain
 from enum import Flag, Enum
 from loguru import logger
 from decimal import Decimal
@@ -73,6 +72,9 @@ class OrderIntent:
     bracketLoss: DecimalPrice | DecimalPercent | None = None
 
     preview: bool = False
+
+    # custom key-value config for setting options if the consuming application wants to read them
+    config: dict[str, str | bool] = field(default_factory=dict)
 
     @property
     def isLong(self) -> bool:
@@ -187,8 +189,8 @@ class OrderIntent:
 lang = r"""
 
     // BUY something
-    // SYMBOL SHARES|PRICE_QUANTITY ALGO ["on" EXCHANGE] [@ [["credit"? LIMIT_PRICE] | "live"] [+ PROFIT_POINTS ALGO | - LOSS_POINTS ALGO | ± EQUAL_PROFIT_LOSS_POINTS ALGO_PROFIT ALGO_LOSS]] [preview]
-    cmd: symbol quantity orderalgo exchange? limit? preview?
+    // SYMBOL SHARES|PRICE_QUANTITY ALGO ["on" EXCHANGE] [@ [["credit"? LIMIT_PRICE] | "live"] [+ PROFIT_POINTS ALGO | - LOSS_POINTS ALGO | ± EQUAL_PROFIT_LOSS_POINTS ALGO_PROFIT ALGO_LOSS]] [preview] [config [key | key=value]+]?
+    cmd: symbol quantity orderalgo exchange? limit? preview? config? preview?
 
 
     // TODO: we could actually use buylang to parse symbol allowing full spread descriptions here too, but
@@ -235,6 +237,11 @@ lang = r"""
     bracket: "±" price (algo algo)?
 
     preview: "p"i | "pr"i | "pre"i | "prev"i | "preview"i
+
+    config: ("c"i | "conf"i | "config"i) config_item+
+
+    // config items can be single items (value for single item becomes True by default) or key=value items
+    config_item: /[A-Za-z0-9]+/ | /[A-Za-z0-9]+/ "=" /[A-Za-z0-9]+/
 
     WHITESPACE: (" " | "\t" | "\n")+
     COMMENT: /#[^\n]*/
@@ -328,6 +335,28 @@ class TreeToBuy(Transformer):
 
     def preview(self, _):
         self.b.preview = True
+
+    @v_args(inline=True)
+    def config(self, *got):
+        """Combine already-parsed config_items (now single dicts) into the final config object"""
+        conf = {}
+
+        # every input here is a single-element dict we can combine into our final result
+        for g in got:
+            conf |= g
+
+        self.b.config = conf
+
+    @v_args(inline=True)
+    def config_item(self, *got):
+        """Parse a single config item as part of a trailing config key-value (or bare key) settings group"""
+        # single value, make True
+        if len(got) == 1:
+            return {got[0].lower(): True}
+
+        # else, direct KV pair
+        k, v = got
+        return {k.lower(): str(v)}
 
     @v_args(inline=True)
     def price(self, got):
