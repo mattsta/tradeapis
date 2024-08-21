@@ -24,6 +24,7 @@ import datetime
 
 
 # fmt: off
+class Calculation(str): ...
 class DecimalPrice(Decimal): ...
 class DecimalPercent(Decimal): ...
 class DecimalShares(Decimal): ...
@@ -64,7 +65,7 @@ class OrderIntent:
     bracketProfitAlgo: str = "LMT"
     bracketLossAlgo: str = "STP"
 
-    limit: DecimalPrice | None = None
+    limit: DecimalPrice | Calculation | None = None
 
     bracketProfit: DecimalPrice | DecimalPercent | None = None
     bracketLoss: DecimalPrice | DecimalPercent | None = None
@@ -211,7 +212,13 @@ lang = r"""
     exchange: "ON"i /[A-Za-z]+/
 
     // PRICE is a helper for "float parsing with optional , or _ allowed" also with unlimited decimal precision allowed
-    price: /[0-9_,]+\.?[0-9]*/
+    price: /[0-9_,]+\.?[0-9]*/ | calculation
+
+    // an in-line calculation container is anything between parens as long as it starts with an allowed operator
+    // (We are allowing anything so (+ 1 2) or (+ live jfkladsjlku382) all work; it's the job of the consumer to
+    //  determine _what_ to do with the calculation syntax here, we just enforce prefix-with-operator notation)
+    calculation: "(" FUNC (/[^() ]+/ | calculation)+ ")"
+    FUNC: "+" | "-" | "*" | "/"
 
     is_percentage: "%"
 
@@ -283,6 +290,14 @@ class TreeToBuy(Transformer):
             self.b.limit = DecimalPrice(got)
 
     @v_args(inline=True)
+    def calculation(self, *got):
+        # an individual calculation is just passed-through with parens re-added
+        func, *args = got
+        rebuilt = f"({func} {' '.join(args)})"
+        # print("Calculation REBUILT:", rebuilt, "via", (func, args))
+        return Calculation(rebuilt)
+
+    @v_args(inline=True)
     def credit(self, got):
         # credit requests are just a negative limit price
         # ("got" is already a DecimalPrice()  here from the 'price' rule)
@@ -308,7 +323,14 @@ class TreeToBuy(Transformer):
 
     @v_args(inline=True)
     def price(self, got):
-        return DecimalPrice(got.replace("_", "").replace(",", ""))
+        # price can be either an input numeric string OR it can be an already-parsed "calculation"
+        if isinstance(got, Calculation):
+            return got
+
+        if isinstance(got, str):
+            return DecimalPrice(got.replace("_", "").replace(",", ""))
+
+        return got
 
     @v_args(inline=True)
     def profit(self, got, *algo):

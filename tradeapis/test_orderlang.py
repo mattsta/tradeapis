@@ -1,6 +1,7 @@
 from tradeapis.orderlang import (
     OrderLang,
     OrderIntent,
+    Calculation,
     DecimalShares,
     DecimalCash,
     DecimalLong,
@@ -71,6 +72,45 @@ def test_stock_quoted_quotes_zero_price_is_zero_also_no_qty_preview_again():
     cmd = "MSFT241220C00500000 all REL preview"
     result = OrderIntent(
         symbol="MSFT241220C00500000", qty=None, algo="REL", preview=True
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_and_calculator():
+    cmd = '"AAPL" 100 REL @ (/ 100 3)'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        limit=Calculation("(/ 100 3)"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_and_calculator_arbitrary():
+    cmd = '"AAPL" 100 REL @ (/ (+ live 100) (* :BP3 3))'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        limit=Calculation("(/ (+ live 100) (* :BP3 3))"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_and_calculator_nested():
+    cmd = '"AAPL" 100 REL @ (/ (* 100 7 (* (/ 5 4) 3) (/ 3_000 (* 4 2))))'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        limit=Calculation("(/ (* 100 7 (* (/ 5 4) 3) (/ 3_000 (* 4 2))))"),
     )
 
     ol = OrderLang()
