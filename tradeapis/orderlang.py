@@ -195,7 +195,7 @@ lang = r"""
 
     // TODO: we could actually use buylang to parse symbol allowing full spread descriptions here too, but
     //       then we would need to include the buylang Order() object instaed of just a symbol string in our OrderIntent() output.
-    symbol: /\/?[:A-Za-z0-9\/\._-]{1,21}/ | /".*"/ | /'.*'/
+    symbol: /\/?[:A-Za-z0-9\/\._-]{1,22}/ | /".*"/ | /'.*'/
 
     quantity: shares_short | shares_long | cash_amount_long | cash_amount_short | qty_all
 
@@ -241,7 +241,7 @@ lang = r"""
     config: ("c"i | "conf"i | "config"i) config_item+
 
     // config items can be single items (value for single item becomes True by default) or key=value items
-    config_item: /[A-Za-z0-9]+/ | /[A-Za-z0-9]+/ "=" /[A-Za-z0-9]+/
+    config_item: /[^\s=]+/ | /[^\s=]+/ "=" /[^\s]+/
 
     WHITESPACE: (" " | "\t" | "\n")+
     COMMENT: /#[^\n]*/

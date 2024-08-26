@@ -108,6 +108,97 @@ def test_stock_quoted_quotes_zero_price_is_zero_config():
     assert ol.parse(cmd) == result
 
 
+def test_stock_quoted_quotes_no_price_config():
+    cmd = '"AAPL" 100 REL conf red=blue sad happy start=vwap2'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        config=dict(red="blue", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_non_alpha():
+    cmd = '"AAPL" 100 REL conf red=blue sad happy start=vwap2 aux=3.33 boom=$%^&'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        config=dict(
+            red="blue", sad=True, happy=True, start="vwap2", aux="3.33", boom="$%^&"
+        ),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_weirder():
+    cmd = '"AAPL" 100 REL conf red=blue sad happy start=vwap2 aux=3.33 boom=$%^& extra34_33=99.3.312.|^&'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        config=dict(
+            red="blue",
+            sad=True,
+            happy=True,
+            start="vwap2",
+            aux="3.33",
+            boom="$%^&",
+            extra34_33="99.3.312.|^&",
+        ),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_weirder_reordered():
+    cmd = '"AAPL" 100 REL conf red=blue sad boom=$%^& extra34_33=99.3.312.|^& happy start=vwap2 aux=3.33'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        config=dict(
+            red="blue",
+            sad=True,
+            happy=True,
+            start="vwap2",
+            aux="3.33",
+            boom="$%^&",
+            extra34_33="99.3.312.|^&",
+        ),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_weirder_dashes():
+    cmd = '"AAPL" 100 REL conf red=blue s-ad bo-om=$%^& extra34_33=99.3.312.|^& ha-ppy start=-vwap2 aux=-3.3-3'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        config={
+            "red": "blue",
+            "s-ad": True,
+            "bo-om": "$%^&",
+            "extra34_33": "99.3.312.|^&",
+            "ha-ppy": True,
+            "start": "-vwap2",
+            "aux": "-3.3-3",
+        },
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
 def test_stock_quoted_quotes_and_calculator():
     cmd = '"AAPL" 100 REL @ (/ 100 3)'
     result = OrderIntent(
