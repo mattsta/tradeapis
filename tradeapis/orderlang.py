@@ -1,25 +1,12 @@
 """orderlang allows full purchase intent including pricing.
 (versus buylang which is mainly for symbol and spread declarations)"""
 
-import dataclasses
 from dataclasses import dataclass, field
-from typing import *
 
 # The parser generator
-import lark
 from lark import Lark, Transformer, Token, v_args
-from lark import UnexpectedToken, UnexpectedCharacters
 
-import prettyprinter as pp  # type: ignore
-
-from enum import Flag, Enum
-from loguru import logger
 from decimal import Decimal
-
-# tell pretty printer to check input for dataclass printing
-pp.install_extras(["dataclasses"], warn_on_error=False)
-
-import datetime
 
 
 # fmt: off
@@ -190,7 +177,10 @@ lang = r"""
 
     // BUY something
     // SYMBOL SHARES|PRICE_QUANTITY ALGO ["on" EXCHANGE] [@ [["credit"? LIMIT_PRICE] | "live"] [+ PROFIT_POINTS ALGO | - LOSS_POINTS ALGO | ± EQUAL_PROFIT_LOSS_POINTS ALGO_PROFIT ALGO_LOSS]] [preview] [config [key | key=value]+]?
-    cmd: symbol quantity orderalgo exchange? limit? preview? config? preview?
+
+    // We want to be flexible where the limit price, config options, and preview flag can be set, so allow anything in any order:
+    cmd: symbol quantity orderalgo exchange? tail*
+    tail: preview? (limit | config)? preview?
 
 
     // TODO: we could actually use buylang to parse symbol allowing full spread descriptions here too, but
@@ -211,13 +201,19 @@ lang = r"""
     limit: "@" (price | "live"i | credit) (profit | loss | bracket)*
 
     // credit spreads require a NEGATIVE price for us to receive money (or exiting a debit spread),
-    // so we need an extra identifier to distinguish between stop loss '-' and credit limit price '-' requests
+    // so we need an extra identifier to distinguish between stop loss '-' and credit limit price '-' requests.
+    // Credit spreads can be either: BUY NEGATIVE PRICE, or SELL POSITIVE PRICE. For using credit spreads
+    // by generating a regular long spread then just selling it, we use positive prices so this 'credit' feature
+    // isn't actually _required_ for credit transactions.
     credit: "credit"i "-" price
 
     exchange: "ON"i /[A-Za-z]+/
 
     // PRICE is a helper for "float parsing with optional , or _ allowed" also with unlimited decimal precision allowed
-    price: /[0-9_,]+\.?[0-9]*/ | calculation
+    // Note on price format: for shares and cash, we EXTERNALIZE the negative sign and report a "short decimal" object, but
+    // for regular numeric parsing (used by the key-value config system) this price rule *does* consume an optional leading
+    // negative sign to generate a negative Decimal() object.
+    price: /-?[0-9][0-9_,]*\.?[0-9_,]*/ | calculation
 
     // an in-line calculation container is anything between parens as long as it starts with an allowed operator
     // (We are allowing anything so (+ 1 2) or (+ live jfkladsjlku382) all work; it's the job of the consumer to
@@ -236,12 +232,22 @@ lang = r"""
     // attach TAKE PROFIT _and_ STOP LOSS order at equal width with optional PROFIT LOSS algo overrides
     bracket: "±" price (algo algo)?
 
-    preview: "p"i | "pr"i | "pre"i | "prev"i | "preview"i
+    preview: "preview"i | "prev"i | "pre"i | "pr"i | "p"i
 
-    config: ("c"i | "conf"i | "config"i) config_item+
+    config: ("config"i | "conf"i | "c"i) config_item+
 
-    // config items can be single items (value for single item becomes True by default) or key=value items
-    config_item: /[^\s=]+/ | /[^\s=]+/ "=" /[^\s]+/
+    // config items can be single items (value for single item becomes True by default) or key=value items.
+    // If you pass in price-like values or calculation values, those are also transformed into native data types.
+    // Also note: ORDER matters here, so we must consider 'price' BEFORE the generic all-allowed-characters so the 'price'
+    //            can properly capture price (or calculation) shaped inputs before returning to the "any string" matcher.
+    // Also note: we convert special values of "false f no off" to False and "true t yes on" to True.
+    config_item: config_truth | ALLOWED_KEY_CHARS "=" (price | ALLOWED_KEY_CHARS)
+
+    // Single config items are always true (key only, no value provided).
+    config_truth: ALLOWED_KEY_CHARS
+
+    // Keys and values must start with a letter or allowed symbol as to NOT CONFLICT WITH NUMBER PARSING
+    ALLOWED_KEY_CHARS: /[^\s=0-9-][^\s=]*/
 
     WHITESPACE: (" " | "\t" | "\n")+
     COMMENT: /#[^\n]*/
@@ -253,10 +259,13 @@ lang = r"""
 """
 
 
-@dataclass
 class TreeToBuy(Transformer):
-    @v_args(inline=False)
-    def cmd(self, stuff):
+    @v_args(inline=True)
+    def cmd(self, *stuff):
+        # This is a little backwards since we're not collecting the results from the rules
+        # then creating the output in the start rule, but it works here and is simpler
+        # since we have some repeating rules and sections which we allow to overwrite
+        # things in different places.
         return self.b
 
     @v_args(inline=True)
@@ -274,25 +283,29 @@ class TreeToBuy(Transformer):
         self.b.symbol = self.b.symbol.replace("'", "").replace('"', "")
 
     @v_args(inline=True)
+    def quantity(self, got):
+        self.b.qty = got
+
+    @v_args(inline=True)
     def shares_long(self, got):
-        self.b.qty = DecimalLongShares(got)
+        return DecimalLongShares(got)
 
     @v_args(inline=True)
     def shares_short(self, got):
-        self.b.qty = DecimalShortShares(got)
+        return DecimalShortShares(got)
 
     @v_args(inline=True)
     def cash_amount_long(self, got):
-        self.b.qty = DecimalLongCash(got)
+        return DecimalLongCash(got)
 
     @v_args(inline=True)
     def cash_amount_short(self, got):
-        self.b.qty = DecimalShortCash(got)
+        return DecimalShortCash(got)
 
     @v_args(inline=True)
     def qty_all(self):
         """If user says qty is all, then we use None to mean "no qty requested, look it up yourself."""
-        self.b.qty = None
+        return None
 
     @v_args(inline=True)
     def limit(self, *gotextra):
@@ -339,34 +352,61 @@ class TreeToBuy(Transformer):
     @v_args(inline=True)
     def config(self, *got):
         """Combine already-parsed config_items (now single dicts) into the final config object"""
-        conf = {}
+
+        # Note: we allow MULTIPLE config blocks, so create dict on first config encounter,
+        #       then for future config blocks, we just merge (or overwrite) values into the single
+        #       config object. Why not?
+        if not self.b.config:
+            self.b.config = {}
 
         # every input here is a single-element dict we can combine into our final result
         for g in got:
-            conf |= g
-
-        self.b.config = conf
+            self.b.config |= g
 
     @v_args(inline=True)
     def config_item(self, *got):
         """Parse a single config item as part of a trailing config key-value (or bare key) settings group"""
         # single value, make True
         if len(got) == 1:
-            return {got[0].lower(): True}
+            # we already resolved this as a truth/false value, so don't process it again
+            return got[0]
 
         # else, direct KV pair
         k, v = got
-        return {k.lower(): str(v)}
+
+        # convert token data to string value so the user doesn't get Lark token repr of Token(RULE, 'value')
+        if isinstance(v, Token):
+            v = str(v).strip()
+
+        if isinstance(v, str):
+            lv = v.lower()
+            # if user value is a true or falsy string, convert it.
+            if lv in {"true", "t", "yes", "on"}:
+                v = True
+            elif lv in {"false", "f", "no", "off"}:
+                v = False
+            elif lv == "none":
+                v = None
+
+        return {k.lower(): v}
+
+    @v_args(inline=True)
+    def config_truth(self, got):
+        # A single value is just a truth value
+        return {got.lower(): True}
 
     @v_args(inline=True)
     def price(self, got):
         # price can be either an input numeric string OR it can be an already-parsed "calculation"
+        # Note: we don't execute or reduce "calculations" here because they can contain external variables
+        #       only the consuming application can populate then resolve.
         if isinstance(got, Calculation):
             return got
 
         if isinstance(got, str):
             return DecimalPrice(got.replace("_", "").replace(",", ""))
 
+        assert None, f"How did you get here with an unexpected data type? {got=}"
         return got
 
     @v_args(inline=True)
@@ -412,7 +452,22 @@ class TreeToBuy(Transformer):
 @dataclass
 class OrderLang:
     def __post_init__(self):
-        self.parser = Lark(lang, start="cmd", parser="lalr", transformer=TreeToBuy())
+        self.parser = Lark(
+            lang,
+            start="cmd",
+            # Use a more forgiving parser so it absorbs some of our logic burden:
+            parser="earley",
+            # Do what we mean, not what we say:
+            ambiguity="resolve",
+            # again, do what we mean, not what we say:
+            lexer="dynamic",
+            # big error if errors:
+            strict=True,
+            # this doesn't seem to cause any problems:
+            ordered_sets=False,
+            # debug=True
+        )
+        self.transformer = TreeToBuy()
 
     def parse(self, text: str) -> OrderIntent:
         """Parse 'text' conforming to our triggerlang grammar into a
@@ -425,18 +480,5 @@ class OrderLang:
         # input text must be .strip()'d because the parser doesn't
         # like end of input newlines."""
         parsed = self.parser.parse(text.strip())
-        return parsed
-
-    def parseDebug(self, text: str) -> OrderIntent:
-        """Parse a triggerlang grammar format like .parse() but also
-        print the created datastructures to stdout as both their
-        dictionary form and their object/dataclass form."""
-
-        parsed = self.parse(text)
-
-        print("\tResult", "as dict:")
-        pp.cpprint(dataclasses.asdict(parsed))
-        print("\n\tResult", "as class:")
-        pp.cpprint(parsed)
-
-        return parsed
+        transformed = self.transformer.transform(parsed)
+        return transformed

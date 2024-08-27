@@ -24,6 +24,7 @@ beautifulsoup4 = "^4.11.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3"
+pytest-xdist = "^3.6.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

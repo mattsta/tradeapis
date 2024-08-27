@@ -13,9 +13,8 @@ from tradeapis.orderlang import (
     DecimalShortCash,
 )
 
-from decimal import (
-    Decimal,
-)
+import pytest
+from decimal import Decimal
 
 
 def test_stock():
@@ -121,14 +120,292 @@ def test_stock_quoted_quotes_no_price_config():
     assert ol.parse(cmd) == result
 
 
+def test_stock_quoted_quotes_no_price_config_with_price_before():
+    cmd = '"AAPL" 100 REL @ 3.33 conf red=blue sad happy start=vwap2'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("3.33"),
+        algo="REL",
+        config=dict(red="blue", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_with_price_before_false():
+    cmd = '"AAPL" 100 REL @ 3.33 conf red=blue sad=off happy=no start=vwap2'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("3.33"),
+        algo="REL",
+        config=dict(red="blue", sad=False, happy=False, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_with_price_before_false_reset():
+    cmd = '"AAPL" 100 REL @ 3.33 conf red=blue sad=off happy=no start=vwap2 @ 3.33 conf happy=yes sad'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("3.33"),
+        algo="REL",
+        config=dict(red="blue", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_with_price_before_false_reset_inner():
+    cmd = (
+        '"AAPL" 100 REL @ 3.33 conf red=blue sad=off happy=no start=vwap2 happy=yes sad'
+    )
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("3.33"),
+        algo="REL",
+        config=dict(red="blue", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_with_price_before_false_reset_inner_single():
+    cmd = '"AAPL" 100 REL @ 3.33 conf red=blue sad=off happy=no start=vwap2 happy=yes sad b'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("3.33"),
+        algo="REL",
+        config=dict(red="blue", sad=True, happy=True, start="vwap2", b=True),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_with_price_before_false_reset_inner_single_none():
+    cmd = '"AAPL" 100 REL @ 3.33 conf red=blue sad=off happy=no start=vwap2 happy=yes sad b=none'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("3.33"),
+        algo="REL",
+        config=dict(red="blue", sad=True, happy=True, start="vwap2", b=None),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_with_price_before_dual_config():
+    # Demo of overwriting price and config options by just adding more of them
+    cmd = '"AAPL" 100 REL @ 3.33 conf red=blue sad happy start=vwap2 @ 2.22 conf red=green'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("2.22"),
+        algo="REL",
+        config=dict(red="green", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_with_price_before_preview_after():
+    cmd = '"AAPL" 100 REL @ 3.33 conf red=blue sad happy start=vwap2 preview'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("3.33"),
+        algo="REL",
+        preview=True,
+        config=dict(red="blue", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_with_price_after():
+    cmd = '"AAPL" 100 REL conf red=blue sad happy start=vwap2 @ 3.33'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("3.33"),
+        algo="REL",
+        config=dict(red="blue", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_with_price_after_preview_after():
+    cmd = '"AAPL" 100 REL conf red=blue sad happy start=vwap2 @ 3.33 preview'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("3.33"),
+        algo="REL",
+        preview=True,
+        config=dict(red="blue", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_with_price_after_preview_after():
+    cmd = '"AAPL" 100 REL conf red=blue sad happy start=vwap2 preview @ 3.33'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("3.33"),
+        algo="REL",
+        preview=True,
+        config=dict(red="blue", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_with_price_after_preview_before_before():
+    cmd = '"AAPL" 100 REL preview conf red=blue sad happy start=vwap2 @ 3.33'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        limit=Decimal("3.33"),
+        algo="REL",
+        preview=True,
+        config=dict(red="blue", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
 def test_stock_quoted_quotes_no_price_config_non_alpha():
-    cmd = '"AAPL" 100 REL conf red=blue sad happy start=vwap2 aux=3.33 boom=$%^&'
+    cmd = '"AAPL" 100 REL conf red=blue sad happy start=vwap2 aux=3.33 boom=%^&'
     result = OrderIntent(
         symbol="AAPL",
         qty=DecimalLongShares(100),
         algo="REL",
         config=dict(
-            red="blue", sad=True, happy=True, start="vwap2", aux="3.33", boom="$%^&"
+            red="blue",
+            sad=True,
+            happy=True,
+            start="vwap2",
+            aux=Decimal("3.33"),
+            boom="%^&",
+        ),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_non_alpha_other_bad():
+    cmd = '"AAPL" 100 REL conf red=blue sad happy start=2vwap2 aux=MORE boom=%^&'
+
+    # verify key/value of `start=2vwap2` is a hard error.
+    # (we have to exclude non-numeric values starting with numbers because the number parser
+    #  would consume '2', generate an output of Decimal("2") then break the rest of the
+    #  string into additional key/value parts)
+    with pytest.raises(Exception):
+        result = OrderIntent(
+            symbol="AAPL",
+            qty=DecimalLongShares(100),
+            algo="REL",
+            config=dict(
+                red="blue", sad=True, happy=True, start="2vwap2", aux="MORE", boom="%^&"
+            ),
+        )
+
+        ol = OrderLang()
+        assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_non_alpha_other_good():
+    cmd = '"AAPL" 100 REL conf red=blue sad happy start=vwap2 aux=MORE boom=%^&'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        config=dict(
+            red="blue", sad=True, happy=True, start="vwap2", aux="MORE", boom="%^&"
+        ),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_non_alpha_price():
+    cmd = '"AAPL" 100 REL conf red=blue sad happy start=vwap2 aux = 3.33 boom=%^&'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        config=dict(
+            red="blue",
+            sad=True,
+            happy=True,
+            start="vwap2",
+            aux=Decimal("3.33"),
+            boom="%^&",
+        ),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_non_alpha_price_negative():
+    cmd = '"AAPL" 100 REL config red=blue sad happy start=vwap2 aux = -3.33 boom=%^&'
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        config=dict(
+            red="blue",
+            sad=True,
+            happy=True,
+            start="vwap2",
+            aux=Decimal("-3.33"),
+            boom="%^&",
+        ),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_non_alpha_price_calc():
+    cmd = (
+        '"AAPL" 100 REL c red=blue sad HAPPY start=vwap2 aux=(/ 1.2 3.4 4.5) boom=$%^&'
+    )
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        config=dict(
+            red="blue",
+            sad=True,
+            happy=True,
+            start="vwap2",
+            aux=Calculation("(/ 1.2 3.4 4.5)"),
+            boom="$%^&",
         ),
     )
 
@@ -138,6 +415,55 @@ def test_stock_quoted_quotes_no_price_config_non_alpha():
 
 def test_stock_quoted_quotes_no_price_config_weirder():
     cmd = '"AAPL" 100 REL conf red=blue sad happy start=vwap2 aux=3.33 boom=$%^& extra34_33=99.3.312.|^&'
+
+    # Same parser issue here: we have to verify values that aren't numbers don't start with numbers so
+    # the number parser doesn't consume them incorrectly.
+    with pytest.raises(Exception):
+        result = OrderIntent(
+            symbol="AAPL",
+            qty=DecimalLongShares(100),
+            algo="REL",
+            config=dict(
+                red="blue",
+                sad=True,
+                happy=True,
+                start="vwap2",
+                aux=Decimal("3.33"),
+                boom="$%^&",
+                extra34_33="99.3.312.|^&",
+            ),
+        )
+
+        ol = OrderLang()
+        assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_weirder_reordered_bad():
+    cmd = '"AAPL" 100 REL conf red=blue sad boom=%^& extra34_33=99.3.312.|^& happy start=vwap2 aux=3.33'
+
+    with pytest.raises(Exception):
+        result = OrderIntent(
+            symbol="AAPL",
+            qty=DecimalLongShares(100),
+            algo="REL",
+            config=dict(
+                red="blue",
+                sad=True,
+                happy=True,
+                start="vwap2",
+                aux=Decimal("3.33"),
+                boom="%^&",
+                extra34_33="99.3.312.|^&",
+            ),
+        )
+
+        ol = OrderLang()
+        assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_no_price_config_weirder_reordered_good():
+    cmd = '"AAPL" 100 REL conf red=blue sad boom=%^& extra34_33=99.3 happy start=vwap2 aux=3.33'
+
     result = OrderIntent(
         symbol="AAPL",
         qty=DecimalLongShares(100),
@@ -147,30 +473,9 @@ def test_stock_quoted_quotes_no_price_config_weirder():
             sad=True,
             happy=True,
             start="vwap2",
-            aux="3.33",
-            boom="$%^&",
-            extra34_33="99.3.312.|^&",
-        ),
-    )
-
-    ol = OrderLang()
-    assert ol.parse(cmd) == result
-
-
-def test_stock_quoted_quotes_no_price_config_weirder_reordered():
-    cmd = '"AAPL" 100 REL conf red=blue sad boom=$%^& extra34_33=99.3.312.|^& happy start=vwap2 aux=3.33'
-    result = OrderIntent(
-        symbol="AAPL",
-        qty=DecimalLongShares(100),
-        algo="REL",
-        config=dict(
-            red="blue",
-            sad=True,
-            happy=True,
-            start="vwap2",
-            aux="3.33",
-            boom="$%^&",
-            extra34_33="99.3.312.|^&",
+            aux=Decimal("3.33"),
+            boom="%^&",
+            extra34_33=Decimal("99.3"),
         ),
     )
 
@@ -179,24 +484,25 @@ def test_stock_quoted_quotes_no_price_config_weirder_reordered():
 
 
 def test_stock_quoted_quotes_no_price_config_weirder_dashes():
-    cmd = '"AAPL" 100 REL conf red=blue s-ad bo-om=$%^& extra34_33=99.3.312.|^& ha-ppy start=-vwap2 aux=-3.3-3'
-    result = OrderIntent(
-        symbol="AAPL",
-        qty=DecimalLongShares(100),
-        algo="REL",
-        config={
-            "red": "blue",
-            "s-ad": True,
-            "bo-om": "$%^&",
-            "extra34_33": "99.3.312.|^&",
-            "ha-ppy": True,
-            "start": "-vwap2",
-            "aux": "-3.3-3",
-        },
-    )
+    cmd = '"AAPL" 100 REL conf red=blue s-ad bo-om=%^& extra34_33=99.3.312.|^& ha-ppy start=-vwap2 aux=-3.3-3'
+    with pytest.raises(Exception):
+        result = OrderIntent(
+            symbol="AAPL",
+            qty=DecimalLongShares(100),
+            algo="REL",
+            config={
+                "red": "blue",
+                "s-ad": True,
+                "bo-om": "%^&",
+                "extra34_33": "99.3.312.|^&",
+                "ha-ppy": True,
+                "start": "-vwap2",
+                "aux": "-3.3-3",
+            },
+        )
 
-    ol = OrderLang()
-    assert ol.parse(cmd) == result
+        ol = OrderLang()
+        assert ol.parse(cmd) == result
 
 
 def test_stock_quoted_quotes_and_calculator():
@@ -605,6 +911,38 @@ def test_stock_limit_down_up_bracket_override_algos():
 
 def test_stock_limit_down_up_bracket_override_preview():
     cmd = "AAPL 100 REL @ 33.33 - 4.44 + 2.22 ± 6 preview"
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        limit=Decimal("33.33"),
+        bracketProfit=Decimal("6"),
+        bracketLoss=Decimal("6"),
+        preview=True,
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_limit_down_up_bracket_override_prev():
+    cmd = "AAPL 100 REL @ 33.33 - 4.44 + 2.22 ± 6 prev"
+    result = OrderIntent(
+        symbol="AAPL",
+        qty=DecimalLongShares(100),
+        algo="REL",
+        limit=Decimal("33.33"),
+        bracketProfit=Decimal("6"),
+        bracketLoss=Decimal("6"),
+        preview=True,
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_limit_down_up_bracket_override_p():
+    cmd = "AAPL 100 REL @ 33.33 - 4.44 + 2.22 ± 6 p"
     result = OrderIntent(
         symbol="AAPL",
         qty=DecimalLongShares(100),
