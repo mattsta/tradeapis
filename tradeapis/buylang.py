@@ -2,17 +2,17 @@ import dataclasses
 from dataclasses import dataclass, field
 from typing import *
 
+from enum import Flag
+
+from itertools import chain
+
 # The parser generator
 import lark
-from lark import Lark, Transformer, Token, v_args
-from lark import UnexpectedToken, UnexpectedCharacters
 
 # debug printing helper (colors! actually formats dataclasses properly,
 # unlike pprint in Python <= 3.9 where pprint doesn't format them at all)
 import prettyprinter as pp  # type: ignore
-
-from itertools import chain
-from enum import Flag
+from lark import Lark, Token, Transformer, UnexpectedCharacters, UnexpectedToken, v_args
 from loguru import logger
 
 # tell pretty printer to check input for dataclass printing
@@ -208,12 +208,14 @@ lang = r"""
     // Stock is anything else, but for our purpose can also be prefixed
     // with a contract namespace. Like STOCK:BTC vs. CRYPTO:BTC etc.
     // Also allow numbers for options like NQU2 etc
-    stock: /\/?[:A-Za-z0-9\/\._]{1,15}/
+    // Also allow dashes for adding things like I:AD-NYSE or I:TICK-NYSE
+    stock: /\/?[:A-Za-z0-9\/\._-]{1,15}/
 
-    single_order: stock | option
+    single_order: stock | option | string
 
-    spread_symbol: stock | option
-    spread: side qty spread_symbol (side qty spread_symbol)*
+    spread_symbol: stock | option | string
+    spread: spread_leg+
+    spread_leg: side qty spread_symbol
 
     // optional quantity (defaults to 1 if not provided)
     qty: (/[0-9]+/)?
@@ -228,6 +230,17 @@ lang = r"""
 
     WHITESPACE: (" " | "\t" | "\n")+
     COMMENT: /#[^\n]*/
+
+    string: ESCAPED_STRING_DOUBLE | ESCAPED_STRING_SINGLE
+
+    _STRING_INNER: /.*?/
+    _STRING_ESC_INNER: _STRING_INNER /(?<!\\)(\\\\)*?/
+
+    // "string of things"
+    ESCAPED_STRING_DOUBLE: "\"" _STRING_ESC_INNER "\""
+
+    // 'string of things'
+    ESCAPED_STRING_SINGLE: "'" _STRING_ESC_INNER "'"
 
     %ignore WHITESPACE
     %ignore COMMENT
@@ -247,7 +260,7 @@ class TreeToOrder(Transformer):
     @v_args(inline=True)
     def stock(self, got):
         # We use '_' in place of spaces where IBKR expects them
-        # (because spaces conflict with our generic spread parsing logic)
+        # (though, now we allow quoted symbols directly too)
         return got.replace("_", " ")
 
     @v_args(inline=True)
@@ -255,18 +268,22 @@ class TreeToOrder(Transformer):
         return got
 
     @v_args(inline=True)
+    def string(self, got):
+        # lark string rule INCLUDES the surrounding quotes, but we want to remove them, so we remove them
+        return got[1:-1]
+
+    @v_args(inline=True)
     def spread_symbol(self, got):
         return got.upper()
 
-    def spread(self, got):
-        gots = []
+    @v_args(inline=True)
+    def spread(self, *spreads):
+        return list(spreads)
 
-        # iterate spread results in groups of 3 to create orders for request
-        for s in range(0, len(got), 3):
-            gots.append(Order(got[s + 0], got[s + 1], got[s + 2]))
-
-        # logger.info("spread got {}", gots)
-        return gots
+    @v_args(inline=True)
+    def spread_leg(self, side, qty, symbol):
+        # logger.info("spread got {} :: {} :: {}", side, qty, symbol)
+        return Order(side, qty, symbol)
 
     def qty(self, got):
         """Value is optional, so if not present, default to 1"""

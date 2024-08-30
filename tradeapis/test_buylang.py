@@ -9,6 +9,14 @@ def test_stock():
     assert ol.parse(cmd) == result
 
 
+def test_spaces():
+    cmd = "'BRK A'"
+    result = OrderRequest(orders=[Order(Side.UNSET, 1, "BRK A")])
+
+    ol = OLang()
+    assert ol.parse(cmd) == result
+
+
 def test_option():
     cmd = "AAPL222222C00200000"
     result = OrderRequest(orders=[Order(Side.UNSET, 1, "AAPL222222C00200000")])
