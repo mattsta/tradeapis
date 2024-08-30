@@ -1,20 +1,21 @@
-from tradeapis.orderlang import (
-    OrderLang,
-    OrderIntent,
-    Calculation,
-    DecimalShares,
-    DecimalCash,
-    DecimalLong,
-    DecimalShort,
-    DecimalPercent,
-    DecimalLongShares,
-    DecimalLongCash,
-    DecimalShortShares,
-    DecimalShortCash,
-)
+from decimal import Decimal
 
 import pytest
-from decimal import Decimal
+
+from tradeapis.orderlang import (
+    Calculation,
+    DecimalCash,
+    DecimalLong,
+    DecimalLongCash,
+    DecimalLongShares,
+    DecimalPercent,
+    DecimalShares,
+    DecimalShort,
+    DecimalShortCash,
+    DecimalShortShares,
+    OrderIntent,
+    OrderLang,
+)
 
 
 def test_stock():
@@ -289,6 +290,35 @@ def test_stock_quoted_quotes_no_price_config_with_price_after_preview_before_bef
         algo="REL",
         preview=True,
         config=dict(red="blue", sad=True, happy=True, start="vwap2"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_spaces_stuff():
+    cmd = '"SELL 1 650581442" -13.0 LIM @ 5.823 preview'
+    result = OrderIntent(
+        symbol="SELL 1 650581442",
+        qty=DecimalShortShares(13),
+        algo="LIM",
+        limit=Decimal("5.823"),
+        preview=True,
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_spaces_stuff():
+    cmd = '"SELL 1 650581442" -13.0 LIM @ 5.823 preview config extra="big string" again=\'more str more\''
+    result = OrderIntent(
+        symbol="SELL 1 650581442",
+        qty=DecimalShortShares(13),
+        algo="LIM",
+        limit=Decimal("5.823"),
+        preview=True,
+        config=dict(extra="big string", again="more str more"),
     )
 
     ol = OrderLang()

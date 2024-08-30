@@ -182,10 +182,9 @@ lang = r"""
     cmd: symbol quantity orderalgo exchange? tail*
     tail: preview? (limit | config)? preview?
 
-
     // TODO: we could actually use buylang to parse symbol allowing full spread descriptions here too, but
     //       then we would need to include the buylang Order() object instaed of just a symbol string in our OrderIntent() output.
-    symbol: /\/?[:A-Za-z0-9\/\._-]{1,22}/ | /".*"/ | /'.*'/
+    symbol: /\/?[:A-Za-z0-9\/\._-]{1,22}/ | string
 
     quantity: shares_short | shares_long | cash_amount_long | cash_amount_short | qty_all
 
@@ -241,7 +240,7 @@ lang = r"""
     // Also note: ORDER matters here, so we must consider 'price' BEFORE the generic all-allowed-characters so the 'price'
     //            can properly capture price (or calculation) shaped inputs before returning to the "any string" matcher.
     // Also note: we convert special values of "false f no off" to False and "true t yes on" to True.
-    config_item: config_truth | ALLOWED_KEY_CHARS "=" (price | ALLOWED_KEY_CHARS)
+    config_item: config_truth | ALLOWED_KEY_CHARS "=" (price | string | ALLOWED_KEY_CHARS)
 
     // Single config items are always true (key only, no value provided).
     config_truth: ALLOWED_KEY_CHARS
@@ -251,6 +250,17 @@ lang = r"""
 
     WHITESPACE: (" " | "\t" | "\n")+
     COMMENT: /#[^\n]*/
+
+    string: ESCAPED_STRING_DOUBLE | ESCAPED_STRING_SINGLE
+
+    _STRING_INNER: /.*?/
+    _STRING_ESC_INNER: _STRING_INNER /(?<!\\)(\\\\)*?/
+
+    // "string of things"
+    ESCAPED_STRING_DOUBLE: "\"" _STRING_ESC_INNER "\""
+
+    // 'string of things'
+    ESCAPED_STRING_SINGLE: "'" _STRING_ESC_INNER "'"
 
     %import common.NUMBER
 
@@ -281,6 +291,11 @@ class TreeToBuy(Transformer):
         #  - "buy 100 AAPL" 1 AF
         #  - then store symbol="BUY 100 AAPL" instead of the default retained quotes as symbol="\"BUY 100 AAPL\""
         self.b.symbol = self.b.symbol.replace("'", "").replace('"', "")
+
+    @v_args(inline=True)
+    def string(self, got):
+        # lark string rule INCLUDES the surrounding quotes, but we want to remove them, so we remove them
+        return got[1:-1]
 
     @v_args(inline=True)
     def quantity(self, got):
