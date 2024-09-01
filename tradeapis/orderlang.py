@@ -1,12 +1,18 @@
 """orderlang allows full purchase intent including pricing.
 (versus buylang which is mainly for symbol and spread declarations)"""
 
-from dataclasses import dataclass, field
+from __future__ import annotations
 
-# The parser generator
-from lark import Lark, Transformer, Token, v_args
-
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
+
+from lark import Lark, Token, Transformer, v_args
+
+from .buylang import looksLikeOrderCommand, OLang as BuyLang, Order
+
+
+# global for dividing things by 100 in decimal format
+D100: Final = Decimal("100")
 
 
 # fmt: off
@@ -24,6 +30,13 @@ class DecimalShortCash(DecimalShort, DecimalCash): ...
 # fmt: on
 
 
+def becomeDecimal(x: int | float | None) -> Decimal | None:
+    if isinstance(x, (int, float)):
+        return Decimal(str(x))
+
+    return x
+
+
 @dataclass(slots=True)
 class OrderIntent:
     """Description of a purchase request."""
@@ -33,6 +46,9 @@ class OrderIntent:
 
     # You can optionally provide an exchange for this order if you have specific requirements.
     exchange: str | None = None
+
+    # we also parse 'symbol' directly to a buylang Order() instance if it's a spread request
+    spread: Order | None = None
 
     # Quantity is always represented as a POSITIVE VALUE which is then
     # designated long or short by its type. The type can easily be
@@ -272,6 +288,10 @@ lang = r"""
 
 
 class TreeToBuy(Transformer):
+    def __init__(self, buylang) -> None:
+        # save symbol to order request parser as a global we can reuse
+        self.buylang = buylang
+
     @v_args(inline=True)
     def cmd(self, *stuff):
         # This is a little backwards since we're not collecting the results from the rules
@@ -286,13 +306,15 @@ class TreeToBuy(Transformer):
         # so if this parser is re-used we generate a new order on each parse.
         # Also means this parser is not re-entrant, but nobody should be doing such things anyway here.
         self.b = OrderIntent()
-        self.b.symbol = got.replace("_", " ").upper()
+        self.b.symbol = got.replace("_", " ").replace("  ", " ").upper().strip()
 
-        # if this was a quoted input, remove quotes for the actual symbol storage
-        # (basically: if input was:
-        #  - "buy 100 AAPL" 1 AF
-        #  - then store symbol="BUY 100 AAPL" instead of the default retained quotes as symbol="\"BUY 100 AAPL\""
-        self.b.symbol = self.b.symbol.replace("'", "").replace('"', "")
+        # re-add quotes to symbol for buylang parsing
+        # only quote if it looks like a single symbol (has space and is short).
+        # if is longer with space(s), don't quote because we need to parse it as a full side-size-symbol command.
+        if self.b.symbol.count(" ") >= 2 and looksLikeOrderCommand(self.b.symbol):
+            # if we have two spaces and it's long enough to be a buy command like "buy 100 AAPL buy 1 AAPL240920P00200000"
+            # then we pass the symbol through as-provided.
+            self.b.spread = self.buylang.parse(self.b.symbol)
 
     @v_args(inline=True)
     def string(self, got):
@@ -483,7 +505,8 @@ class OrderLang:
             ordered_sets=True,
             # debug=True
         )
-        self.transformer = TreeToBuy()
+
+        self.transformer = TreeToBuy(BuyLang())
 
     def parse(self, text: str) -> OrderIntent:
         """Parse 'text' conforming to our triggerlang grammar into a

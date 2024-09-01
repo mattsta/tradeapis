@@ -26,7 +26,18 @@ from tradeapis.fees import OptionFees
 Side = Flag("Side", "BTO STO BTC STC BUY SELL UNSET")
 
 # Custom types (convert to TypeVar after Python 3.10+)
+# Then convert to just `type` after Python 3.12+
 Symbol = str
+
+# Don't allow these strings to appear as individual elements in a
+# single order symbol if it has spaces because that means somebody quoted
+# a full order command into an order symbol and we didn't parse it correctly.
+FORBIDDEN_SYMBOL_PARTS = set("buy sell".upper().split())
+
+
+def looksLikeOrderCommand(text) -> bool:
+    """Given an upper case string, check if it "looks like" an order command maybe instead of a single symbol."""
+    return bool(FORBIDDEN_SYMBOL_PARTS & set(text.split()))
 
 
 @dataclass
@@ -44,13 +55,16 @@ class Order:
     multiplier: int
     symbol: Symbol
 
-    # For more detailed use cases, you can attach limit/stop prices directly
-    # to the order symbol description itself too.
+    # For more detailed use cases, you can attach limit prices directly
+    # for fees calculations.
     limit: Optional[float] = None
-    stop: Optional[float] = None
 
     def __post_init__(self):
-        self.symbol = self.symbol.upper()
+        self.symbol = self.symbol.upper().strip()
+        if self.symbol.count(" ") >= 2:
+            assert not looksLikeOrderCommand(
+                self.symbol
+            ), f"Why does your order symbol look like an order command? Requested order symbol: {self.symbol=} but our commands have {FORBIDDEN_SYMBOL_PARTS=}"
 
     def underlying(self) -> Symbol:
         return self.symbol[:-15]
@@ -213,18 +227,18 @@ lang = r"""
 
     single_order: stock | option | string
 
-    spread_symbol: stock | option | string
     spread: spread_leg+
     spread_leg: side qty spread_symbol
+    spread_symbol: stock | option | string
 
     // optional quantity (defaults to 1 if not provided)
     qty: (/[0-9]+/)?
 
     side: bto | sto | btc | stc | buy | sell
-    bto: "buy_to_open"i | "bto"i
-    sto: "sell_to_open"i | "sto"i
-    btc: "buy_to_close"i | "btc"i
-    stc: "sell_to_close"i | "stc"i
+    bto: "buy to open"i | "bto"i
+    sto: "sell to open"i | "sto"i
+    btc: "buy to close"i | "btc"i
+    stc: "sell to close"i | "stc"i
     buy: "buy"i
     sell: "sell"i
 
