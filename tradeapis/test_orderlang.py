@@ -2,6 +2,8 @@ from decimal import Decimal
 
 import pytest
 
+from tradeapis.buylang import Order, OrderRequest, Side
+
 from tradeapis.orderlang import (
     Calculation,
     DecimalCash,
@@ -304,10 +306,60 @@ def test_stock_quoted_quotes_spaces_stuff():
         algo="LIM",
         limit=Decimal("5.823"),
         preview=True,
+        spread=OrderRequest(
+            orders=[
+                Order(side=Side.SELL, multiplier=1, symbol="650581442", limit=None),
+            ]
+        ),
     )
 
     ol = OrderLang()
     assert ol.parse(cmd) == result
+
+
+def test_stock_quoted_quotes_spaces_stuff_not_end():
+    cmd = '"SELL 1 650581442" -13.0 LIM @ 5.823 preview config again=\'more str more\' extra="big string" evenmore=stuff'
+    result = OrderIntent(
+        symbol="SELL 1 650581442",
+        qty=DecimalShortShares(13),
+        algo="LIM",
+        limit=Decimal("5.823"),
+        preview=True,
+        config=dict(extra="big string", again="more str more", evenmore="stuff"),
+        spread=OrderRequest(
+            orders=[
+                Order(side=Side.SELL, multiplier=1, symbol="650581442", limit=None),
+            ]
+        ),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+    # print(ol.parse(cmd))
+
+
+def test_stock_quoted_quotes_spaces_stuff_not_end_becomes_order_spread():
+    cmd = '"SELL 1 650581442 BUY 1 AAPL" -13.0 LIM @ 5.823 preview config again=\'more str more\' extra="big string" evenmore=stuff'
+    result = OrderIntent(
+        symbol="SELL 1 650581442 BUY 1 AAPL",
+        qty=DecimalShortShares(13),
+        algo="LIM",
+        limit=Decimal("5.823"),
+        preview=True,
+        spread=OrderRequest(
+            orders=[
+                Order(side=Side.SELL, multiplier=1, symbol="650581442", limit=None),
+                Order(side=Side.BUY, multiplier=1, symbol="AAPL", limit=None),
+            ]
+        ),
+        config=dict(extra="big string", again="more str more", evenmore="stuff"),
+    )
+
+    ol = OrderLang()
+    assert ol.parse(cmd) == result
+
+    # print(ol.parse(cmd))
 
 
 def test_stock_quoted_quotes_spaces_stuff():
@@ -319,6 +371,11 @@ def test_stock_quoted_quotes_spaces_stuff():
         limit=Decimal("5.823"),
         preview=True,
         config=dict(extra="big string", again="more str more"),
+        spread=OrderRequest(
+            orders=[
+                Order(side=Side.SELL, multiplier=1, symbol="650581442", limit=None),
+            ]
+        ),
     )
 
     ol = OrderLang()
@@ -577,7 +634,15 @@ def test_stock_quoted_quotes_and_calculator_nested():
 def test_stock_quoted_big():
     cmd = "'buy 100 AAPL sell 100 TSLA' 1 REL"
     result = OrderIntent(
-        symbol="BUY 100 AAPL SELL 100 TSLA", qty=DecimalLongShares(1), algo="REL"
+        symbol="BUY 100 AAPL SELL 100 TSLA",
+        qty=DecimalLongShares(1),
+        algo="REL",
+        spread=OrderRequest(
+            orders=[
+                Order(side=Side.BUY, multiplier=100, symbol="AAPL", limit=None),
+                Order(side=Side.SELL, multiplier=100, symbol="TSLA", limit=None),
+            ]
+        ),
     )
 
     ol = OrderLang()
@@ -587,7 +652,15 @@ def test_stock_quoted_big():
 def test_stock_quoted_big_quotes():
     cmd = '"buy 100 AAPL sell 100 TSLA" 1 REL'
     result = OrderIntent(
-        symbol="BUY 100 AAPL SELL 100 TSLA", qty=DecimalLongShares(1), algo="REL"
+        symbol="BUY 100 AAPL SELL 100 TSLA",
+        qty=DecimalLongShares(1),
+        algo="REL",
+        spread=OrderRequest(
+            orders=[
+                Order(side=Side.BUY, multiplier=100, symbol="AAPL", limit=None),
+                Order(side=Side.SELL, multiplier=100, symbol="TSLA", limit=None),
+            ]
+        ),
     )
 
     ol = OrderLang()
@@ -1094,3 +1167,846 @@ def test_preview_limit_cash_short():
 
     ol = OrderLang()
     assert ol.parse(cmd) == result
+
+
+def test_ladder_up_down_manual():
+    cmd = "NVDA 100 AF @ 100"
+    result = OrderIntent(
+        symbol="NVDA",
+        qty=DecimalLongShares(100),
+        algo="AF",
+        limit=Decimal("100"),
+        preview=False,
+    )
+
+    ol = OrderLang()
+    order = ol.parse(cmd)
+
+    assert order == result
+
+    # generate 5 total orders each increasing by $10 from the previous price (including starting price)
+    assert order.ladder(5, 10) == [
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("100"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("110"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("120"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("130"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("140"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+    ]
+
+    # generate 5 total orders each decreasing by $10 from the previous price
+    assert order.ladder(5, -10) == [
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("100"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("90"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("80"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("70"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("60"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+    ]
+
+    assert order.ladder(5, percent=0.10) == [
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=100.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=110.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=120.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=130.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=140.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+    ]
+
+    assert order.ladder(5, percent=-0.10) == [
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=100.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=90.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=80.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=70.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=60.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+    ]
+
+    assert order.ladder(5, percent=0.13) == [
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=100.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=113.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=126.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=139.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=152.0,
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+    ]
+
+    assert order.ladder(5, percent=-0.13) == [
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("100.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("87.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("74.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("61.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("48.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+    ]
+
+
+def test_ladder_implicit_pts():
+    cmd = "NVDA 100 AF @ 100 scale steps 5 points 10"
+    result = OrderIntent(
+        symbol="NVDA",
+        qty=DecimalLongShares(100),
+        algo="AF",
+        limit=Decimal("100"),
+        preview=False,
+        scaleDesc={"steps": Decimal("5"), "points": Decimal("10")},
+    )
+
+    ol = OrderLang()
+    order = ol.parse(cmd)
+
+    assert order == result
+
+    assert order.scale == [
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("100.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("110.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("120.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("130.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("140.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+        ),
+    ]
+
+
+def test_ladder_implicit_noscale():
+    cmd = "NVDA 100 AF @ 100"
+    result = OrderIntent(
+        symbol="NVDA",
+        qty=DecimalLongShares(100),
+        algo="AF",
+        limit=Decimal("100"),
+        preview=False,
+    )
+
+    ol = OrderLang()
+    order = ol.parse(cmd)
+
+    assert order == result
+
+    # verify no scale description generates no scale
+    assert order.scale == []
+
+    # verify no scale generates an order intent which *is not* the original one
+    avgrecord = order.scaleAvgRecord
+
+    assert isinstance(avgrecord, OrderIntent)
+    assert avgrecord == result
+    assert avgrecord is not order
+
+
+def test_ladder_implicit_pct():
+    cmd = "NVDA 100 AF @ 100 scale steps 5 33%"
+    result = OrderIntent(
+        symbol="NVDA",
+        qty=DecimalLongShares(100),
+        algo="AF",
+        limit=Decimal("100"),
+        preview=False,
+        scaleDesc={"steps": Decimal("5"), "percent": Decimal("0.33")},
+    )
+
+    ol = OrderLang()
+    order = ol.parse(cmd)
+
+    assert order == result
+
+    assert order.scale == [
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("100.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+            scaleDesc=None,
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("133.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+            scaleDesc=None,
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("166.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+            scaleDesc=None,
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("199.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+            scaleDesc=None,
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("232.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+            scaleDesc=None,
+        ),
+    ]
+
+    assert order.scaleAvgRecord == OrderIntent(
+        symbol="NVDA",
+        algo="AF",
+        exchange=None,
+        spread=None,
+        qty=Decimal("500"),
+        bracketProfitAlgo="LMT",
+        bracketLossAlgo="STP",
+        limit=Decimal("166.00"),
+        bracketProfit=None,
+        bracketLoss=None,
+        preview=False,
+        config={},
+        scaleDesc=None,
+    )
+
+
+def test_ladder_implicit_pts_negative():
+    cmd = "NVDA 100 AF @ 100 scale steps 3 points -7"
+    result = OrderIntent(
+        symbol="NVDA",
+        qty=DecimalLongShares(100),
+        algo="AF",
+        limit=Decimal("100"),
+        preview=False,
+        scaleDesc={"steps": Decimal("3"), "points": Decimal("-7")},
+    )
+
+    ol = OrderLang()
+    order = ol.parse(cmd)
+
+    assert order == result
+
+    assert order.scale == [
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("100.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+            scaleDesc=None,
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("93.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+            scaleDesc=None,
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("86.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+            scaleDesc=None,
+        ),
+    ]
+
+    assert order.scaleAvgRecord == OrderIntent(
+        symbol="NVDA",
+        algo="AF",
+        exchange=None,
+        spread=None,
+        qty=Decimal("300"),
+        bracketProfitAlgo="LMT",
+        bracketLossAlgo="STP",
+        limit=Decimal("93"),
+        bracketProfit=None,
+        bracketLoss=None,
+        preview=False,
+        config={},
+        scaleDesc=None,
+    )
+
+
+def test_ladder_implicit_pct_negative():
+    cmd = "NVDA 100 AF @ 100 scale steps 3 -33%"
+    result = OrderIntent(
+        symbol="NVDA",
+        qty=DecimalLongShares(100),
+        algo="AF",
+        limit=Decimal("100"),
+        preview=False,
+        scaleDesc={"steps": Decimal("3"), "percent": Decimal("-0.33")},
+    )
+
+    ol = OrderLang()
+    order = ol.parse(cmd)
+
+    assert order == result
+
+    assert order.scale == [
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("100.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+            scaleDesc=None,
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("67.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+            scaleDesc=None,
+        ),
+        OrderIntent(
+            symbol="NVDA",
+            algo="AF",
+            exchange=None,
+            spread=None,
+            qty=Decimal("100"),
+            bracketProfitAlgo="LMT",
+            bracketLossAlgo="STP",
+            limit=Decimal("34.0"),
+            bracketProfit=None,
+            bracketLoss=None,
+            preview=False,
+            config={},
+            scaleDesc=None,
+        ),
+    ]
+
+    assert order.scaleAvgRecord == OrderIntent(
+        symbol="NVDA",
+        algo="AF",
+        exchange=None,
+        spread=None,
+        qty=Decimal("300"),
+        bracketProfitAlgo="LMT",
+        bracketLossAlgo="STP",
+        limit=Decimal("67.00"),
+        bracketProfit=None,
+        bracketLoss=None,
+        preview=False,
+    )
