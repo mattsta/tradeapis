@@ -79,6 +79,34 @@ class OrderIntent:
     # custom key-value config for setting options if the consuming application wants to read them
     config: dict[str, str | bool] = field(default_factory=dict)
 
+    # if a scale/ladder configuration is requested,
+    # save the parameters here so the scale can be generated on-demand
+    scaleDesc: dict[str, Decimal | float | int] | None = None
+
+    @property
+    def scale(self) -> list[OrderIntent]:
+        """Return a scale in/out list of orders if scale/ladder params are embedded in this OrderIntent"""
+        if self.scaleDesc:
+            return self.ladder(**self.scaleDesc)
+
+        return []
+
+    @property
+    def scaleAvgRecord(self) -> OrderIntent:
+        """Generate a new OrderIntent representing the average cost of all scale orders as the limit price."""
+        if scale := self.scale:
+            pq = 0
+            tq = 0
+            for order in scale:
+                pq += order.limit * order.qty
+                tq += order.qty
+
+            # average cost is sum(p * q) / sum(q)
+            return replace(self, limit=pq / tq, qty=tq, scaleDesc=None)
+
+        # else, if no scale/ladder defined, return a COPY of ourself so user doesn't edit the original object by mistake
+        return replace(self)
+
     @property
     def isLong(self) -> bool:
         return isinstance(self.qty, DecimalLong)
@@ -190,6 +218,58 @@ class OrderIntent:
         # else, the bracket price requested is the EXACT price to limit
         return self.limit - (bracketLoss * self.shortFix)
 
+    def ladder(
+        self,
+        steps: int | Decimal = 0,
+        points: int | float | Decimal | None = None,
+        percent: float | Decimal | None = None,
+    ) -> list[OrderIntent]:
+        """Generate multiple OrderIntent requests where each grows by 'points' or 'percent' higher or lower than the starting order at each step.
+
+        NOTE: down-scale-price ladders are defined by negative points/percent and NOT by negative steps. Steps are always positive.
+        """
+
+        # if nothing requested, nothing returned (and no other parameters processed)
+        if not steps or steps < 0:
+            return []
+
+        assert bool(points) ^ bool(
+            percent
+        ), f"You must specfiy *one* of *either* 'points' or 'percent' but not both!"
+
+        assert not isinstance(
+            self.limit, Calculation
+        ), "To generate a ladder you must have a concrete limit price instead of a Calculation!"
+
+        # convert parameters to decimal objects so all the math works without errors
+        # (these are noop if the values are already decimals)
+        points = becomeDecimal(points)
+        percent = becomeDecimal(percent)
+        startPrice = becomeDecimal(self.limit)
+
+        def nextVal(amt, step):
+            if points:
+                return startPrice + (points * step)
+
+            # else, percent grow each time...
+            return startPrice * (1 + (percent * step))
+
+        currentOrder = self
+        results = []
+
+        for i in range(int(steps)):
+            results.append(
+                replace(
+                    currentOrder,
+                    limit=nextVal(currentOrder.limit, i),
+                    # don't duplicate scaleDesc into these subsequent orders
+                    scaleDesc=None,
+                )
+            )
+            currentOrder = results[-1]
+
+        return results
+
 
 lang = r"""
 
@@ -198,7 +278,12 @@ lang = r"""
 
     // We want to be flexible where the limit price, config options, and preview flag can be set, so allow anything in any order:
     cmd: symbol quantity orderalgo exchange? tail*
-    tail: preview? (limit | config)? preview?
+    tail: preview? (scale | limit | config)? preview?
+
+    scale: "scale" scale_steps (scale_pts | scale_pct)
+    scale_steps: "steps" price
+    scale_pts: ("pt"i | "pts"i | "point"i | "points"i)? price
+    scale_pct: price "%"
 
     // TODO: we could actually use buylang to parse symbol allowing full spread descriptions here too, but
     //       then we would need to include the buylang Order() object instaed of just a symbol string in our OrderIntent() output.
@@ -301,6 +386,24 @@ class TreeToBuy(Transformer):
         # since we have some repeating rules and sections which we allow to overwrite
         # things in different places.
         return self.b
+
+    @v_args(inline=True)
+    def scale(self, steps, amt):
+        # steps and amt are dicts we can use as arguments to the ladder() function of ourself.
+        self.b.scaleDesc = steps | amt
+
+    @v_args(inline=True)
+    def scale_steps(self, steps):
+        return dict(steps=steps)
+
+    @v_args(inline=True)
+    def scale_pts(self, pts):
+        return dict(points=pts)
+
+    @v_args(inline=True)
+    def scale_pct(self, pct):
+        # user percentages are 100-based, but our API percentages are 1-based
+        return dict(percent=pct / D100)
 
     @v_args(inline=True)
     def symbol(self, got):
