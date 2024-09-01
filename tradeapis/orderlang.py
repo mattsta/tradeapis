@@ -240,13 +240,15 @@ lang = r"""
     // Also note: ORDER matters here, so we must consider 'price' BEFORE the generic all-allowed-characters so the 'price'
     //            can properly capture price (or calculation) shaped inputs before returning to the "any string" matcher.
     // Also note: we convert special values of "false f no off" to False and "true t yes on" to True.
-    config_item: config_truth | ALLOWED_KEY_CHARS "=" (price | string | ALLOWED_KEY_CHARS)
+    config_item: config_truth | kvpair
+
+    kvpair: ALLOWED_KEY_CHARS "=" (string | price | ALLOWED_KEY_CHARS)
 
     // Single config items are always true (key only, no value provided).
     config_truth: ALLOWED_KEY_CHARS
 
-    // Keys and values must start with a letter or allowed symbol as to NOT CONFLICT WITH NUMBER PARSING
-    ALLOWED_KEY_CHARS: /[^\s=0-9-][^\s=]*/
+    // Keys and values must start with a letter or allowed symbol as to NOT CONFLICT WITH NUMBER PARSING OR STRING PARSING
+    ALLOWED_KEY_CHARS: /[^\s=0-9-"'][^\s=]*/
 
     WHITESPACE: (" " | "\t" | "\n")+
     COMMENT: /#[^\n]*/
@@ -379,16 +381,13 @@ class TreeToBuy(Transformer):
             self.b.config |= g
 
     @v_args(inline=True)
-    def config_item(self, *got):
+    def config_item(self, got):
         """Parse a single config item as part of a trailing config key-value (or bare key) settings group"""
-        # single value, make True
-        if len(got) == 1:
-            # we already resolved this as a truth/false value, so don't process it again
-            return got[0]
+        return got
 
-        # else, direct KV pair
-        k, v = got
-
+    @v_args(inline=True)
+    def kvpair(self, k, v):
+        # print("got kv of:", k, " = ", v)
         # convert token data to string value so the user doesn't get Lark token repr of Token(RULE, 'value')
         if isinstance(v, Token):
             v = str(v).strip()
@@ -478,8 +477,10 @@ class OrderLang:
             lexer="dynamic",
             # big error if errors:
             strict=True,
-            # this doesn't seem to cause any problems:
-            ordered_sets=False,
+            # ordered_sets improves reliability of test suites, otherwise
+            # with un-ordered sets sometimes failures only happen randomly
+            # instead of on every test run:
+            ordered_sets=True,
             # debug=True
         )
         self.transformer = TreeToBuy()
