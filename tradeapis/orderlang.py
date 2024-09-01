@@ -152,7 +152,8 @@ class OrderIntent:
 
         This means if your qty is long and limit is $10 and your bracketProfit is $3, this generates a bracketProfitReal == $13.
 
-        You can of course avoid using bracketProfitReal and treat bracketProfit as any value you like as well."""
+        You can of course avoid using bracketProfitReal and treat bracketProfit as any value you like as well.
+        """
 
         # if percent, extract percent of whole to use for addition
         bracketProfit = self.bracketProfit
@@ -173,7 +174,8 @@ class OrderIntent:
 
         Takes care of both direction (long vs. short) and value (percent vs. exact).
 
-        See notes in bracketProfitReal() about how the bracket prices are treated for exit here."""
+        See notes in bracketProfitReal() about how the bracket prices are treated for exit here.
+        """
 
         # if percent, do basically:  PRICE * 1.profitPercent
         # if percent, extract percent of whole to use for subtraction
