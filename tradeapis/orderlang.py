@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
+from typing import Final
 
 from lark import Lark, Token, Transformer, v_args
 
@@ -40,7 +41,7 @@ class DecimalShortCash(DecimalShort, DecimalCash): ...
 
 
 def becomeDecimal(x: int | float | None) -> Decimal | None:
-    if isinstance(x, (int, float)):
+    if isinstance(x, (int, float, str)):
         return Decimal(str(x))
 
     return x
@@ -197,7 +198,7 @@ class OrderIntent:
         return 1 if self.isLong else -1
 
     @property
-    def bracketProfitReal(self) -> Decimal:
+    def bracketProfitReal(self) -> Decimal | None:
         """Generate the _actual_ bracket profit value given the current limit price.
 
         Takes care of both direction (long vs. short) and value (percent vs. exact).
@@ -210,7 +211,9 @@ class OrderIntent:
         """
 
         # if percent, extract percent of whole to use for addition
-        bracketProfit = self.bracketProfit
+        if not (bracketProfit := self.bracketProfit):
+            return None
+
         if self.isBracketProfitPercent:
             bracketProfit = self.limit * self.bracketProfit / 100
 
@@ -223,7 +226,7 @@ class OrderIntent:
         return self.limit + (bracketProfit * self.shortFix)
 
     @property
-    def bracketLossReal(self) -> Decimal:
+    def bracketLossReal(self) -> Decimal | None:
         """Generate the _actual_ bracket loss value given the current limit price.
 
         Takes care of both direction (long vs. short) and value (percent vs. exact).
@@ -233,7 +236,9 @@ class OrderIntent:
 
         # if percent, do basically:  PRICE * 1.profitPercent
         # if percent, extract percent of whole to use for subtraction
-        bracketLoss = self.bracketLoss
+        if not (bracketLoss := self.bracketLoss):
+            return None
+
         if self.isBracketLossPercent:
             bracketLoss = self.limit * self.bracketLoss / 100
 
@@ -261,7 +266,7 @@ class OrderIntent:
 
         assert bool(points) ^ bool(
             percent
-        ), f"You must specfiy *one* of *either* 'points' or 'percent' but not both!"
+        ), "You must specfiy *one* of *either* 'points' or 'percent' but not both!"
 
         assert not isinstance(
             self.limit, Calculation
@@ -297,7 +302,7 @@ class OrderIntent:
         return results
 
 
-lang = r"""
+lang: Final = r"""
 
     // BUY something
     // SYMBOL SHARES|PRICE_QUANTITY ALGO ["on" EXCHANGE] [@ [["credit"? LIMIT_PRICE] | "live"] [+ PROFIT_POINTS ALGO | - LOSS_POINTS ALGO | ± EQUAL_PROFIT_LOSS_POINTS ALGO_PROFIT ALGO_LOSS]] [preview] [config [key | key=value]+]?
