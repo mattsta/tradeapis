@@ -111,13 +111,30 @@ class OrderIntent:
                 tq += order.qty
 
             # average cost is sum(p * q) / sum(q)
-            return replace(self, limit=pq / tq, qty=tq, scaleDesc=None)
+            # Note: due to how we check types, we MUST re-create the current limit price type
+            #       and the current quantity type holding the new values.
+            # Double note: this also assumes scale records are ALL SAME SIDE. So, don't mix long/short legs in a scale-out or scale-in operation
+            #              because the overall quantity field must be either Long or Short. Also, this probably doesn't work with cash amounts
+            #              since cash amounts wouldn't have any quantities in the first place (cash amounts imply no qty, so the consuming runtime
+            #              automatically calculates quantity based on current live market price for the instrument symbol, then back-fills the
+            #              quantity details).
+            return replace(
+                self,
+                limit=self.limit.__class__(pq / tq),
+                qty=self.qty.__class__(tq),
+                scaleDesc=None,
+            )
 
         # else, if no scale/ladder defined, return a COPY of ourself so user doesn't edit the original object by mistake
         return replace(self)
 
     @property
     def isLong(self) -> bool:
+        # Require using exact LONG or SHORT types instead of just a generic undetermined "Decimal" type
+        # (because the profit/loss math changes direction depending on the _type_ of the .qty field, so if it
+        #  isn't Long or Short, the profit and loss math is completely wrong)
+        assert isinstance(self.qty, (DecimalLong, DecimalShort))
+
         return isinstance(self.qty, DecimalLong)
 
     @property
