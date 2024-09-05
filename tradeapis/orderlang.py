@@ -121,7 +121,7 @@ class OrderIntent:
             #              quantity details).
             return replace(
                 self,
-                limit=self.limit.__class__(pq / tq),
+                limit=round(self.limit.__class__(pq / tq), 8),
                 qty=self.qty.__class__(tq),
                 scaleDesc=None,
             )
@@ -252,10 +252,17 @@ class OrderIntent:
     def ladder(
         self,
         steps: int | Decimal = 0,
+        growth: int | Decimal = 0,
         points: int | float | Decimal | None = None,
         percent: float | Decimal | None = None,
     ) -> list[OrderIntent]:
         """Generate multiple OrderIntent requests where each grows by 'points' or 'percent' higher or lower than the starting order at each step.
+
+        "steps" are how many orders to generate.
+        "growth" is by how many shares/contracts to increase the next order from the previous order.
+        "points" and "percent" are how much to grow each step's next limit price.
+
+        # NOTE: percent is 0.xx percent and not 100-based percent.
 
         NOTE: down-scale-price ladders are defined by negative points/percent and NOT by negative steps. Steps are always positive.
         """
@@ -276,9 +283,10 @@ class OrderIntent:
         # (these are noop if the values are already decimals)
         points = becomeDecimal(points)
         percent = becomeDecimal(percent)
+        growth = becomeDecimal(growth)
         startPrice = becomeDecimal(self.limit)
 
-        def nextVal(amt, step):
+        def nextVal(_amt, step):
             if points:
                 return startPrice + (points * step)
 
@@ -286,18 +294,29 @@ class OrderIntent:
             return startPrice * (1 + (percent * step))
 
         currentOrder = self
+        growBy = 0
         results = []
 
         for i in range(int(steps)):
+            newLimit = self.limit.__class__(nextVal(currentOrder.limit, i))
+            newQty = self.qty.__class__(self.qty + growBy)
+
+            # don't allow $0 or negative limit prices or quantities when walking negative directions...
+            if newLimit <= 0 or newQty <= 0:
+                break
+
             results.append(
                 replace(
                     currentOrder,
-                    limit=nextVal(currentOrder.limit, i),
-                    # don't duplicate scaleDesc into these subsequent orders
+                    limit=newLimit,
+                    qty=newQty,
+                    # don't duplicate scaleDesc into the component orders
                     scaleDesc=None,
                 )
             )
+
             currentOrder = results[-1]
+            growBy += growth
 
         return results
 
@@ -309,9 +328,17 @@ lang: Final = r"""
 
     // We want to be flexible where the limit price, config options, and preview flag can be set, so allow anything in any order:
     cmd: symbol quantity orderalgo exchange? tail*
-    tail: preview? (scale | limit | config)? preview?
+    tail: preview? (scale_growth | scale_same | limit | config)? preview?
 
-    scale: "scale" scale_steps (scale_pts | scale_pct)
+    // Scale each new order by adding 'growth' to the previous order size
+    // ("growth" is for QTY, while "pts" and "percent" are for PRICE)
+    scale_growth: "scale" scale_steps scale_grow (scale_pts | scale_pct)
+
+    // Scale each order as the same quantity as the first order
+    scale_same: "scale" scale_steps (scale_pts | scale_pct)
+
+    // Scale components
+    scale_grow: "grow" price
     scale_steps: "steps" price
     scale_pts: ("pt"i | "pts"i | "point"i | "points"i)? price
     scale_pct: price "%"
@@ -419,13 +446,21 @@ class TreeToBuy(Transformer):
         return self.b
 
     @v_args(inline=True)
-    def scale(self, steps, amt):
+    def scale_same(self, steps, amt):
         # steps and amt are dicts we can use as arguments to the ladder() function of ourself.
         self.b.scaleDesc = steps | amt
 
     @v_args(inline=True)
+    def scale_growth(self, steps, growth, amt):
+        self.b.scaleDesc = steps | growth | amt
+
+    @v_args(inline=True)
     def scale_steps(self, steps):
         return dict(steps=steps)
+
+    @v_args(inline=True)
+    def scale_grow(self, grow):
+        return dict(growth=grow)
 
     @v_args(inline=True)
     def scale_pts(self, pts):
