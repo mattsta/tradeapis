@@ -2249,6 +2249,11 @@ def test_ladder_implicit_pct_positive_negative_growth():
     ol = OrderLang()
     order = ol.parse(cmd)
 
+    assert str(DecimalLongShares(100)) == "100"
+    assert str(DecimalShortShares(100)) == "-100"
+    assert str(DecimalLongCash(100)) == "$100"
+    assert str(DecimalShortCash(100)) == "-$100"
+
     assert order == result
 
     # Also verifies we don't scale below a 0 qty price boundary

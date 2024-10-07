@@ -33,11 +33,19 @@ class DecimalShares(NamedDecimal): ...
 class DecimalCash(NamedDecimal): ...
 class DecimalLong(NamedDecimal): ...
 class DecimalShort(NamedDecimal): ...
-class DecimalLongCash(DecimalLong, DecimalCash): ...
+class DecimalLongCash(DecimalLong, DecimalCash):
+    def __str__(self) -> str:
+        return f"${self}"
 class DecimalLongShares(DecimalLong, DecimalShares): ...
-class DecimalShortShares(DecimalShort, DecimalShares): ...
-class DecimalShortCash(DecimalShort, DecimalCash): ...
+class DecimalShortShares(DecimalShort, DecimalShares):
+    def __str__(self) -> str:
+        return f"-{self}"
+class DecimalShortCash(DecimalShort, DecimalCash):
+    def __str__(self) -> str:
+        return f"-${self}"
 # fmt: on
+
+Qty = DecimalLongShares | DecimalShortShares | DecimalLongCash | DecimalShortCash
 
 
 def becomeDecimal(x: int | float | None) -> Decimal | None:
@@ -68,13 +76,7 @@ class OrderIntent:
     #         order itself we can introspect when needed.
     # Also, we retain using 'None' for quantity if user has requested "ALL" quantity (so the consuming
     # program can look up how much current quantity a position has for a symbol for exiting against, probably).
-    qty: (
-        DecimalLongShares
-        | DecimalShortShares
-        | DecimalLongCash
-        | DecimalShortCash
-        | None
-    ) = None
+    qty: Qty | None = None
 
     bracketProfitAlgo: str = "LMT"
     bracketLossAlgo: str = "STP"
@@ -87,11 +89,20 @@ class OrderIntent:
     preview: bool = False
 
     # custom key-value config for setting options if the consuming application wants to read them
-    config: dict[str, str | bool] = field(default_factory=dict)
+    config: dict[str, str | bool | Decimal] = field(default_factory=dict)
 
     # if a scale/ladder configuration is requested,
     # save the parameters here so the scale can be generated on-demand
     scaleDesc: dict[str, Decimal | float | int] | None = None
+
+    def qtyPercent(self, pct: float) -> Qty:
+        """Given a percentage ([0, 1]), return the quantity for the percentage.
+
+        e.g. if OrderIntent(qty=DecimalLongShares(20)), then qtyPercent(0.1) == DecimalLongShares(2)
+        """
+        p = Decimal(str(pct))
+
+        return self.qty.__class__(self.qty * p)
 
     @property
     def scale(self) -> list[OrderIntent]:
@@ -294,7 +305,7 @@ class OrderIntent:
             return startPrice * (1 + (percent * step))
 
         currentOrder = self
-        growBy = 0
+        growBy: int | Decimal = 0
         results = []
 
         for i in range(int(steps)):
