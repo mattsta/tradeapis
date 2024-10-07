@@ -217,7 +217,8 @@ lang = r"""
     // also see: http://www.schwabcontent.com/symbology/int_eng/key_details.html
     // Also note: we allow leading slashes so we can pass futures-like
     // symbols through the entire pipline e.g. /MES /MES210604C04200000
-    option: /\/?[A-Z]{1,6}\d{6}[PC]\d{8}/
+    // Also all optional '-EW3' etc at the end as a custom hack for passing per-instrument tradingClass values around.
+    option: /\/?[A-Z]{1,6}\d{6}[PC]\d{8}(-[A-Z0-9]+)?/
 
     // Stock is anything else, but for our purpose can also be prefixed
     // with a contract namespace. Like STOCK:BTC vs. CRYPTO:BTC etc.
