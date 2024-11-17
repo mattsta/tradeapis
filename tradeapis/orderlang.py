@@ -21,6 +21,9 @@ D100: Final = Decimal("100")
 # to sublcasses having different names cleanly.
 # We clean it up here with a python-module level override.
 class NamedDecimal(Decimal):
+    def nice(self) -> str:
+        return f"{self}"
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}('{self.to_eng_string()}')"
 
@@ -34,14 +37,14 @@ class DecimalCash(NamedDecimal): ...
 class DecimalLong(NamedDecimal): ...
 class DecimalShort(NamedDecimal): ...
 class DecimalLongCash(DecimalLong, DecimalCash):
-    def __str__(self) -> str:
+    def nice(self) -> str:
         return f"${self}"
 class DecimalLongShares(DecimalLong, DecimalShares): ...
 class DecimalShortShares(DecimalShort, DecimalShares):
-    def __str__(self) -> str:
+    def nice(self) -> str:
         return f"-{self}"
 class DecimalShortCash(DecimalShort, DecimalCash):
-    def __str__(self) -> str:
+    def nice(self) -> str:
         return f"-${self}"
 # fmt: on
 
