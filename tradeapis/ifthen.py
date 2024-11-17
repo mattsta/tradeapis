@@ -327,6 +327,59 @@ class DataCondition(Resolvable):
 
 
 @dataclass(slots=True)
+class DurationTrigger(Resolvable, Operation):
+    """A way to delay triggering predicate activation until an Operation has been successful for an entire duration of time.
+
+    The purpose of this is to prevent bounce-out trigger problems where an ask jumps from $3 to $50 then back to $3 because
+    the market is havig a volatility spike and the top-of-book goes offline revealing the underlying trap depth in the book.
+
+    Our mechanism here is once an operation is successful, we begin the timer and if any future check fails before the
+    specified duration, we reset the timer back to zero. The DurationTrigger is only successful if the underlying operation
+    is successful for the entire time duration requested.
+
+    e.g. if AAPL bid >= 200 for 5 minutes: say SAFE 200
+    """
+
+    lval: Resolvable
+    rval: Resolvable | None = None  # type: ignore
+
+    # duration of trigger in python time format (float seconds)
+    duration: float = 0.0
+
+    # timestamp in time.time() format when the operation was first successful
+    activated: float = 0.0
+
+    # current timestamp if the operation continues to be successful.
+    # the DurationTrigger is successful when (continuing - activated >= duration)
+    continuing: float = 0.0
+    remaining: float | None = None
+
+    @property
+    def success(self) -> bool:
+        self.current = self.continuing - self.activated
+        return self.current >= self.duration
+
+    def resolve(self, *args, **kwargs):
+        if (found := self.lval.resolve()) is not None:
+            # if value passed, we have
+            now = time.time()
+            if not self.activated:
+                self.activated = now
+            else:
+                self.continuing = now
+                self.remaining = self.duration - (now - self.activated)
+                if self.success:
+                    return found
+        else:
+            # else, if lval isn't passing, always reset our state back to zero.
+            self.continuing = 0.0
+            self.activated = 0.0
+            self.remaining = None
+
+        return None
+
+
+@dataclass(slots=True)
 class OperationAddPercent(Resolvable, Operation):
     lval: Resolvable
     rval: Resolvable
@@ -665,8 +718,11 @@ lang: Final = r"""
         | product "*" valspec_final -> mul
         | product "/" valspec_final -> div
 
+    // Note: we need to wrap entire spec captures using "for" and "exists" in parens so they associate
+    //      to the ENTIRE statement and don't just capture the trailing condition (e.g. "AAPL bid > 20 exists" -> "20 exists" isn't what we want)
     ?valspec_final: opspec_lvalrval OP opspec_lvalrval -> opspec_lvalrval
-                  | opspec_lvalrval "exists" -> opspec_exists
+                  | "(" opspec_lvalrval ")" "exists" -> opspec_exists
+                  | "(" opspec_lvalrval ")" "for" time_duration -> opspec_duration
                   | "(" opspec_lvalrval ")"
                   | "(" opspec_lvalrval ")" "as"i CNAME -> resolvable_alias
                   | symbol "{" opspec_nosymbol "}" -> resolvable_distribute_symbol
@@ -689,14 +745,15 @@ lang: Final = r"""
 
     ?sum_nosymbol: product_nosymbol
         | sum_nosymbol "+" product_nosymbol -> add
-        | sum_nosymbol"-" product_nosymbol -> sub
+        | sum_nosymbol "-" product_nosymbol -> sub
 
     ?product_nosymbol: valspec_final_nosymbol
         | product_nosymbol "*" valspec_final_nosymbol -> mul
         | product_nosymbol "/" valspec_final_nosymbol -> div
 
     ?valspec_final_nosymbol: opspec_lvalrval_nosymbol OP opspec_lvalrval_nosymbol -> opspec_lvalrval
-                  | opspec_lvalrval_nosymbol "exists" -> opspec_exists
+                  | "(" opspec_lvalrval_nosymbol ")" "exists" -> opspec_exists
+                  | "(" opspec_lvalrval_nosymbol ")" "for" time_duration -> opspec_duration
                   | "(" opspec_lvalrval_nosymbol ")"
                   | "(" opspec_lvalrval_nosymbol ")" "as"i CNAME -> resolvable_alias
                   | valspec_nosymbol
@@ -704,7 +761,8 @@ lang: Final = r"""
                   | (valspec_nosymbol | function) "as"i CNAME -> resolvable_alias
 
     // Symbol can be any instrument-like thing or also all numeric if it's just contract ids or a position lookup request (:N)
-    symbol: /[:\/]?([_0-9A-Za-z-:]{1,32})/ | string
+    // The trailing "not dash or : or space" check is so things like "if AAPL mid > 0: say hello" doesn't trap '0:' as a symbol lookup because symbols can't end in a colon or ': '.
+    symbol: /[:\/]?([_0-9A-Za-z-:]{1,32}[^-: ])/ | string
 
     string: ESCAPED_STRING_DOUBLE | ESCAPED_STRING_SINGLE
 
@@ -718,6 +776,9 @@ lang: Final = r"""
     ESCAPED_STRING_SINGLE: "'" _STRING_ESC_INNER "'"
 
     OP: ">" | ">=" | "<=" | "<" | "=" | "==" | "over"i | "under"i | "is"i | "is not"i | "not"i | "!="
+
+    // specify a time duration we resolve in code later. e.g. "5 minutes", "5 mins", "5m", "3s", "3 seconds", "2 hours" etc
+    time_duration: FLOAT|INT CNAME
 
     // custom function runner with comma separated arguments...
     // (arguments can also be other dynamic values)
@@ -904,6 +965,10 @@ class TreeToIfThen(Transformer):
         opresolved = opToOp("exists")
         return DataCondition(opresolved, lval)
 
+    def opspec_duration(self, lval, duration):
+        """Create a wrapper to only trigger success if the underlying operation passes for entire 'duration' interval."""
+        return DurationTrigger(lval, duration=duration)
+
     def valspec(self, vs):
         return DataExtractor(**vs)
 
@@ -965,6 +1030,26 @@ class TreeToIfThen(Transformer):
                 e.symbol = symbol
 
         return resolvable
+
+    def time_duration(self, num, dur) -> float:
+        """Return duration in float second for requested interval."""
+        dur = dur.lower()
+        num = float(num)
+
+        # Formats we'll accept:
+        #  - s* for seconds
+        #  - m* for minutes
+        #  - h* for hours
+
+        match dur[0]:
+            case "s":
+                return num
+            case "m":
+                return num * 60
+            case "h":
+                return num * 60 * 60
+            case _:
+                raise ValueError(f"Unsupported duration requested? Got: {dur}")
 
 
 @dataclass

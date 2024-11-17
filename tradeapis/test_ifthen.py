@@ -33,6 +33,13 @@ def test_if_simple():
     assert it.parse(cmd)
 
 
+def test_if_simple_duration():
+    cmd = "if (AAPL SMA 5 > 20) for 5 minutes"
+    it = IfThen()
+    assert it.parse(cmd)
+    pprint.pprint(it.parse(cmd))
+
+
 def test_if_simple_small():
     cmd = "if :21 t <= 35 and I:VIX last > 30: say hello"
 
@@ -117,7 +124,7 @@ def test_if_simple_three_extra_side_fewer_parens():
 
 
 def test_if_simple_three_extra_side_fewer_parens_more_parens():
-    cmd = "if vp(AAPL sym, AAPL vwap, -20) as GotResult exists and (AAPL bid as lolbrunei > verticalPut(AAPL vwap, -20, extraThing(-70)) and ((JPM ask is True or (MSFT theta > 20 and :44 twema 60 > 7)))): HELLO WORLD"
+    cmd = "if (vp(AAPL sym, AAPL vwap, -20) as GotResult) exists and (AAPL bid as lolbrunei > verticalPut(AAPL vwap, -20, extraThing(-70)) and ((JPM ask is True or (MSFT theta > 20 and :44 twema 60 > 7)))): HELLO WORLD"
 
     it = IfThen()
 
