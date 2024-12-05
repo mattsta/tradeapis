@@ -193,6 +193,16 @@ class Resolvable(ABC):
 
 
 @dataclass(slots=True)
+class DataString(Resolvable):
+    """Just a string to compare against directly."""
+
+    content: str
+
+    def resolve(self) -> str:
+        return self.content
+
+
+@dataclass(slots=True)
 class DataExtractor(Resolvable):
     """Data Extractor extracts data fields relevant to a single symbol (or instrument) you are using for decision making.
 
@@ -730,6 +740,7 @@ lang: Final = r"""
                   | symbol "{" opspec_nosymbol "}" -> resolvable_distribute_symbol
                   | valspec
                   | function
+                  | string -> resolvable_string
                   | (valspec | function) "as"i CNAME -> resolvable_alias
 
     # "nosymbol" operations are copies of "opspec" operations but where we don't include the symbol in each operation because we have factored it out.
@@ -760,6 +771,7 @@ lang: Final = r"""
                   | "(" opspec_lvalrval_nosymbol ")" "as"i CNAME -> resolvable_alias
                   | valspec_nosymbol
                   | function
+                  | string -> resolvable_string
                   | (valspec_nosymbol | function) "as"i CNAME -> resolvable_alias
 
     // Symbol can be any instrument-like thing or also all numeric if it's just contract ids or a position lookup request (:N)
@@ -1018,6 +1030,9 @@ class TreeToIfThen(Transformer):
         resolvable.alias = str(alias)
         # print("SETTING ALIAS", alias, "ON", resolvable)
         return resolvable
+
+    def resolvable_string(self, content):
+        return DataString(content)
 
     def resolvable_distribute_symbol(self, symbol, resolvable):
         """Replace all sub-extractors with the SAME symbol.

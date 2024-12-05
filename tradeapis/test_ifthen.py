@@ -55,6 +55,14 @@ def test_if_simple_algo():
 
     assert it.parse(cmd)
 
+def test_if_simple_algo_string():
+    cmd = "if :21 AAPL.algo.runner.stopped is 'Hello': say hello"
+
+    it = IfThen()
+
+    assert it.parse(cmd)
+    pprint.pprint(it.parse(cmd))
+
 
 def test_if_simple_two():
     cmd = "if (AAPL SMA 5 > 20 and MSFT SMA 10 > 20) and (MSFT ema 30 - MSFT ema 10) as done > 3 and NVDA { mid > last } and QZLP { mid > last and high < low }"
