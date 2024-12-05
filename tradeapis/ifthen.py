@@ -360,8 +360,10 @@ class DurationTrigger(Resolvable, Operation):
         return self.current >= self.duration
 
     def resolve(self, *args, **kwargs):
-        if (found := self.lval.resolve()) is not None:
-            # if value passed, we have
+        if found := self.lval.resolve():
+            # if value passed, we have an active result to track.
+            # NOTE: Values here should be predicate return values (boolean results) and not numeric results, so we
+            #       shouldn't have to worry about matching against a value of 0 as a valid result.
             now = time.time()
             if not self.activated:
                 self.activated = now
