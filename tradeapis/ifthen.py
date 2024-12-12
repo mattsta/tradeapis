@@ -243,13 +243,16 @@ class DataExtractor(Resolvable):
 
     def resolve(self) -> float | int | bool | None:
         # if we are a directly provided value, just return without any other consideration
+        # logger.info("Resolving here: {}", self)
         if self.value is not None:
             self.current = self.value
             return self.value
 
         # else, use live value extractor which could either be a generic data fetcher or a fully encapsulated data fetcher (just ignoring arguments)
         assert self.datafetcher
+        # logger.info("resolving: {} {} {}", self.symbol, self.datafield, self.timeframe)
         self.current = self.datafetcher(self.symbol, self.datafield, self.timeframe)
+        # logger.info("got: {}", self.current)
 
         return self.current
 
@@ -1199,8 +1202,12 @@ class CheckableRuntime(ABC):
             elif isinstance(root, IfThenPeers):
                 for p in root.active:
                     yield from getall(p)
+            elif isinstance(root, tuple):
+                # peer groups store their active members, which isn't matching under 'Peers' above because... reasons
+                for r in root:
+                    yield from getall(r)
             else:
-                assert isinstance(root, CheckableRuntime)
+                assert isinstance(root, CheckableRuntime), f"Got: {root=}?"
                 yield from getall(root.active)
 
         yield from getall(self.active)
@@ -1215,6 +1222,7 @@ class IfThenSingle(CheckableRuntime):
     def check(self, _symbol: Symbol) -> IfThenRuntimeResultInternal | Literal[False]:
         """Run Active predicate then return when complete."""
         got = self.active.check()
+        # logger.info("Got from check: {}", got)
 
         if got:
             assert isinstance(got, PredicateSuccessCmd)
@@ -1250,6 +1258,7 @@ class IfThenTree(CheckableRuntime):
     def check(self, symbol: Symbol) -> IfThenRuntimeResultInternal | Literal[False]:
         """Run Active predicate then make 'waiting' become active if Active completes."""
         got = self.active.check(symbol)
+        # logger.info("Got from check: {}", got)
 
         if got:
             assert isinstance(got, IfThenRuntimeResultInternal)
@@ -1261,7 +1270,9 @@ class IfThenTree(CheckableRuntime):
             # after completion while _this_ tree augments an additional notification trigger the inner
             # 'active' doesn't need to know about? Maybe?
             return IfThenRuntimeResultInternal(
-                got.cmd, activate=self.waiting | got.activate, deactivate=True
+                got.cmd,
+                activate=self.waiting | got.activate,
+                deactivate=True,
             )
 
         return False
@@ -1299,7 +1310,8 @@ class IfThenPeers(CheckableRuntime):
         checkmap = defaultdict(list)
         for a in self.active:
             for sym in a.symbols:
-                checkmap[sym].append(a)
+                # Note: this replace is SITLL NECESSARY because the client post-updating code DOESNT UPDATE CHECKMAP (yet, at least, maybe we should auto-adjust it somehow)
+                checkmap[sym.replace("/", "").replace(" ", "")].append(a)
 
         # convert lists to tuples (slightly faster for iteration)
         toplevel = {k: tuple(v) for k, v in checkmap.items()}
@@ -1449,24 +1461,24 @@ class IfThenRuntime:
               So, after the client updates the predicate with proper symbol indexing overwrites, the client/caller
               can _then_ activate the predicate properly for symbol fetching updates.
         """
-        if iti := self.predicates.get(pid):
-            # We need to populate the symbolPredicates mapping on activation...
+        iti = self.predicates.get(pid)
+        assert iti, "Why didn't the predicate exist?"
 
-            for symbol in iti.symbols:
-                if activeSymbolPredicates := self.symbolPredicates.get(symbol):
-                    activeSymbolPredicates.add(pid)
-                else:
-                    # else, it doesn't exist, so we create it as new
-                    self.symbolPredicates[symbol] = set([pid])
+        # We need to populate the symbolPredicates mapping on activation...
 
-            self.active.add(pid)
+        for symbol in iti.symbols:
+            if activeSymbolPredicates := self.symbolPredicates.get(symbol):
+                activeSymbolPredicates.add(pid)
+            else:
+                # else, it doesn't exist, so we create it as new
+                self.symbolPredicates[symbol] = set([pid])
 
-            if once:
-                self.once.add(pid)
+        self.active.add(pid)
 
-            return True
+        if once:
+            self.once.add(pid)
 
-        return False
+        return True
 
     def deactivate(self, pid: PredicateId) -> bool:
         """Remove a predicate id from being scheduled or run again, but don't delete the underlying predicate.
@@ -1583,15 +1595,24 @@ class IfThenRuntime:
         """
         ps: Iterable[PredicateId] = self.symbolPredicates.get(symbol, [])
 
+        # Note: symbolPredicates always has ALL predicates, while we then filter only for the 'active' once for actual checking below.
+
+        # print("Checking:", symbol, ps, self.active)
+
         # if check is successful, run ALL active predicates for symbol
         results: list[IfThenRuntimeSuccess | IfThenRuntimeError] = []
+
+        totalActivate: set[PredicateId] = set()
         for p in ps:
             if p in self.active and (pred := self.predicates.get(p)):
                 try:
+                    # print("Checking:", pprint.pformat(pred))
                     match pred.check(symbol):
                         case IfThenRuntimeResultInternal(
                             cmd=cmd, activate=activate, deactivate=deactivate
                         ):
+                            # print("Got success to ACTIVATE", activate, "and DEACTIVATE", deactivate)
+
                             results.append(
                                 IfThenRuntimeSuccess(pid=p, cmd=cmd, predicate=pred)
                             )
@@ -1603,9 +1624,13 @@ class IfThenRuntime:
                                     self.once.remove(p)
                                     del self.predicates[p]
 
-                            self.active |= activate
+                            totalActivate |= activate
                 except Exception as e:
                     results.append(IfThenRuntimeError(pid=p, err=e))
+
+        # Note: we generate totalActivate *after* all processing because we can't modify 'ps' during iteration
+        for a in totalActivate:
+            self.activate(a)
 
         # return if we found anything...
         return results
@@ -1653,8 +1678,12 @@ class IfThenConfigLoader:
 
     ifthenRuntime: IfThenRuntime = field(default_factory=IfThenRuntime)
 
-    def load(self, yamltext: str | bytes) -> int:
-        """Load predicates created and described by config yaml into the runtime."""
+    def load(
+        self, yamltext: str | bytes, activate: bool = True
+    ) -> tuple[int, Iterable[int]]:
+        """Load predicates created and described by config yaml into the runtime.
+
+        'activate' is whether to enable all the predicates upon return or, if False, you will activate manually later."""
 
         body: Final = yaml.load(yamltext, yaml.SafeLoader)
 
@@ -1686,17 +1715,20 @@ class IfThenConfigLoader:
 
         for name, pbody in predicates.items():
             for thing, what in pbody.items():
-                if isinstance(what, Iterable) and not isinstance(what, str):
-                    keyToChildren[name] |= set(what)
-                else:
-                    keyToChildren[name].add(what)
+                # ignore waiting items because waiting items can cause a cycle lookup error for intial load ordering.
+                if thing != "waiting":
+                    if isinstance(what, Iterable) and not isinstance(what, str):
+                        keyToChildren[name] |= set(what)
+                    else:
+                        keyToChildren[name].add(what)
 
         processingOrder = tuple(
             graphlib.TopologicalSorter(keyToChildren).static_order()
         )
+
         # print("Got processing order:", processingOrder)
 
-        def processMapToPredicate(body) -> PredicateId:
+        def processMapToPredicate(ruleName, body) -> PredicateId:
             currentlyActive: PredicateId | None = None
             currentlyWaiting: list[PredicateId] = []
             currentlyPeers: list[PredicateId] = []
@@ -1717,14 +1749,17 @@ class IfThenConfigLoader:
                         assert not currentlyWaiting
                         # if waiting is a string, it is a direct name de-reference
                         if isinstance(bodybody, str):
-                            currentlyWaiting.append(nameToIdMapper[bodybody])
+                            # allow self-referential or cycle looping using key lookups directly (we will post-process them to IDs on final creation)...
+                            if isinstance(bodybody, str):
+                                currentlyWaiting.append(bodybody)
+                            else:
+                                currentlyWaiting.append(nameToIdMapper[bodybody])
                         elif isinstance(bodybody, list):
                             for bb in bodybody:
                                 if isinstance(bb, str):
                                     currentlyWaiting.append(nameToIdMapper[bb])
                         else:
                             assert None, f"Why did you give us {bodybody=} here?"
-
                     case "peers":
                         assert not currentlyActive
                         assert not currentlyWaiting
@@ -1742,6 +1777,8 @@ class IfThenConfigLoader:
             return None
 
         createdCounter = 0
+
+        checkWaiting = []
         for name in processingOrder:
             # this is optional/conditional because our processingOrder includes some sub-elements which arne't top level keys
             if predicatebody := predicates.get(name):
@@ -1749,13 +1786,44 @@ class IfThenConfigLoader:
                 #  - is a single 'if' predicate?
                 #  - is it a tree?
                 #  - is it a peer group?
-                created = processMapToPredicate(predicatebody)
+                created = processMapToPredicate(name, predicatebody)
+                checkWaiting.append(created)
                 nameToIdMapper[name] = created
                 createdCounter += 1
 
-        if starts := body.get("start"):
-            assert isinstance(starts, list)
-            for start in frozenset(starts):
-                self.ifthenRuntime.activate(nameToIdMapper[start])
+        # TODO: after we have CREATED everything here, we need to ITERATE INSIDE _every_ 'tree' to replace any WAITING strings with ID strings of matches.
+        # Especially: :self keys for the id of the tree itself, or names of OTHER components which were self-referential.
+        # e.g. waiting should not look like this anymore:        waiting=frozenset(['wait-until-reset'])
 
-        return createdCounter
+        for cw in checkWaiting:
+            if recheck := self.ifthenRuntime.predicates[cw]:
+                if isinstance(recheck, IfThenTree):
+                    waiting = recheck.waiting
+                    # Lookup other predicates by NAME here and replace their string equivalents
+                    # (if name not found, just use existing entry as it was provided)
+                    # also, if we are waiting on ourself (recursion forever), then replace the 'self' waiting key with our own id
+                    fixed = frozenset(
+                        [
+                            id(recheck) if w == ":self" else nameToIdMapper.get(w, w)
+                            for w in waiting
+                        ]
+                    )
+                    recheck.waiting = fixed
+
+        # NOTE: activating here is BEFORE any task-specific predicate setup, so we may need to avoid setup here to manually run it after proper setup later.
+        starts = body.get("start")
+        if activate:
+            if starts:
+                assert isinstance(starts, list)
+                for start in frozenset(starts):
+                    self.ifthenRuntime.activate(nameToIdMapper[start])
+
+        return (
+            createdCounter,
+            {nameToIdMapper[s] for s in starts},
+            set(nameToIdMapper.values()),
+        )
+
+    def activate(self, pids):
+        for start in frozenset(pids):
+            self.ifthenRuntime.activate(start)
