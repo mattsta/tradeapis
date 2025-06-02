@@ -17,6 +17,8 @@ from tradeapis.ifthen import (
     IfThenConfigLoader,
 )
 
+from tradeapis.ifthen_dsl import IfThenDSLLoader
+
 DATASET = dict()
 
 
@@ -54,6 +56,7 @@ def test_if_simple_algo():
     it = IfThen()
 
     assert it.parse(cmd)
+
 
 def test_if_simple_algo_string():
     cmd = "if :21 AAPL.algo.runner.stopped is 'Hello': say hello"
@@ -155,7 +158,7 @@ def test_if_simple_three_extra_side_fewer_parens_more_parens_WITH_MATH():
 
 
 """
-# Potential format if we allow the syntax to in-line predicates into trees and peers directly instead of 
+# Potential format if we allow the syntax to in-line predicates into trees and peers directly instead of
 # requiring all predicates to be pre-declared by name up-front.
 
     - name: OVER
@@ -202,6 +205,37 @@ def test_yaml_base():
     Also, by allowing this to be an external YAML file format, we can just store predicate YAML files and load them
     externally easily. We can even use template text in a YAML file if we want to create generic/abstract logic for more
     concrete logic or symbol replacement at ingest time.
+    """
+
+    predoc = """
+predicates:
+    first:
+        if: "if position(/ES) == 0: buy /ES 1 LIM"
+
+    flip:
+        if: "if position(/ES) as Size != 0 and (Size * -2) as Flip: buy /ES Flip LIM
+
+    triggerLong:
+        if: "if /ES price:ema:score:ema 0 > 0: say Moving Long"
+
+    triggerShort:
+        if: "if /ES price:ema:score:ema 0 < 0: say Moving Short"
+
+    order:
+        peers:
+            - first
+            - flip
+
+    triggers:
+        peers:
+            - triggerLong
+            - triggerShort
+
+    process:
+        active: triggers
+        waiting:
+            - order
+            - process
     """
 
     doc = """
@@ -253,3 +287,35 @@ start:
     print("Created:", icl.load(doc))
 
     pprint.pprint(icl.ifthenRuntime)
+
+
+def test_dsl():
+    dsl_text = """
+    # Predicate definitions
+    check_short = "if /NQZ4 { MNQ.15.algos.temathma-8x-9x-vwap.stopped is True and (MNQ.15.algos.temathma-8x-9x-vwap.be is 'short') }: evict MNQ* -1 0 MKT; cancel MNQ*; say ALGO NQ stopped 15-FAST SHORT"
+
+    check_long = "if /NQZ4 { MNQ.15.algos.temathma-8x-9x-vwap.stopped is True and (MNQ.15.algos.temathma-8x-9x-vwap.be is 'long') }: evict MNQ* -1 0 MKT; cancel MNQ*; say ALGO NQ stopped 15-FAST LONG"
+
+    unstopped = "if /NQZ4 { MNQ.15.algos.temathma-8x-9x-vwap.stopped is False }: say algo reset"
+
+    # Flow definitions
+    flow run_trigger:
+        check_short | check_long
+
+    # in our DSL here, '@' just means "self-recurse" forever, so it restarts the flow again.
+    flow rotate:
+        run_trigger -> unstopped -> (check_short | check_long) -> unstopped -> @
+
+    # Begin here!
+    # start statements can have one or more flow or predicate labels. multiple can be space or comma or pipe separated. They are all activated concurrently at start time.
+    start: rotate, run_trigger
+    """
+
+    # Create runtime and loader
+    loader = IfThenDSLLoader()
+
+    # Load DSL
+    created_count, start_ids = loader.load(dsl_text)
+    pprint.pprint(loader.ifthenRuntime)
+    print(f"Created {created_count} predicates/flows")
+    print(f"Started: {start_ids}")
