@@ -315,7 +315,7 @@ def test_dsl():
     loader = IfThenDSLLoader()
 
     # Load DSL
-    created_count, start_ids = loader.load(dsl_text)
+    created_count, start_ids, generated = loader.load(dsl_text)
     pprint.pprint(loader.ifthenRuntime)
     print(f"Created {created_count} predicates/flows")
-    print(f"Started: {start_ids}")
+    print(f"Started: {start_ids} :: Generated: {generated}")

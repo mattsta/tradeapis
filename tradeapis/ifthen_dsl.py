@@ -294,7 +294,7 @@ class IfThenDSLLoader:
                     self.ifthenRuntime.activate(name_to_id[name])
                     start_ids.add(name_to_id[name])
 
-        return created_count, start_ids
+        return created_count, start_ids, set(name_to_id.values())
 
     def _get_error_context(self, lines: List[str], line_no: int, col_no: int):
         """Show error context with pointer"""
