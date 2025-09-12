@@ -1311,10 +1311,11 @@ class IfThenPeers(CheckableRuntime):
         for a in self.active:
             for sym in a.symbols:
                 # Note: this replace is SITLL NECESSARY because the client post-updating code DOESNT UPDATE CHECKMAP (yet, at least, maybe we should auto-adjust it somehow)
-                checkmap[sym.replace("/", "").replace(" ", "")].append(a)
+                checkmap[str(sym).replace("/", "").replace(" ", "")].append(a)
 
         # convert lists to tuples (slightly faster for iteration)
-        toplevel = {k: tuple(v) for k, v in checkmap.items()}
+        # Cast keys to Symbol type for type compatibility
+        toplevel: dict[Symbol, tuple[CheckableRuntime, ...]] = {k: tuple(v) for k, v in checkmap.items()}
         self.checkmap |= toplevel
 
     def check(self, symbol: Symbol) -> IfThenRuntimeResultInternal | Literal[False]:
@@ -1680,7 +1681,7 @@ class IfThenConfigLoader:
 
     def load(
         self, yamltext: str | bytes, activate: bool = True
-    ) -> tuple[int, Iterable[int]]:
+    ) -> tuple[int, set[Hashable], set[Hashable]]:
         """Load predicates created and described by config yaml into the runtime.
 
         'activate' is whether to enable all the predicates upon return or, if False, you will activate manually later."""
@@ -1804,7 +1805,7 @@ class IfThenConfigLoader:
                     # also, if we are waiting on ourself (recursion forever), then replace the 'self' waiting key with our own id
                     fixed = frozenset(
                         [
-                            id(recheck) if w == ":self" else nameToIdMapper.get(w, w)
+                            id(recheck) if w == ":self" else nameToIdMapper.get(str(w), w)
                             for w in waiting
                         ]
                     )
