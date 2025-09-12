@@ -5,18 +5,10 @@ Note: these test are mostly checking for "does the grammar parsing crash" and no
 
 import pprint
 
-import pytest
-
 from tradeapis.ifthen import (
-    Condition,
-    ConditionExecution,
-    DataCondition,
-    DataExtractor,
     IfThen,
-    IfThenIntent,
     IfThenConfigLoader,
 )
-
 from tradeapis.ifthen_dsl import IfThenDSLLoader
 
 DATASET = dict()
@@ -205,37 +197,6 @@ def test_yaml_base():
     Also, by allowing this to be an external YAML file format, we can just store predicate YAML files and load them
     externally easily. We can even use template text in a YAML file if we want to create generic/abstract logic for more
     concrete logic or symbol replacement at ingest time.
-    """
-
-    predoc = """
-predicates:
-    first:
-        if: "if position(/ES) == 0: buy /ES 1 LIM"
-
-    flip:
-        if: "if position(/ES) as Size != 0 and (Size * -2) as Flip: buy /ES Flip LIM
-
-    triggerLong:
-        if: "if /ES price:ema:score:ema 0 > 0: say Moving Long"
-
-    triggerShort:
-        if: "if /ES price:ema:score:ema 0 < 0: say Moving Short"
-
-    order:
-        peers:
-            - first
-            - flip
-
-    triggers:
-        peers:
-            - triggerLong
-            - triggerShort
-
-    process:
-        active: triggers
-        waiting:
-            - order
-            - process
     """
 
     doc = """

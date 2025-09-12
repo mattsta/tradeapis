@@ -22,19 +22,17 @@ import asyncio
 import datetime
 import graphlib
 import math
-import pprint
 import time
-
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from dataclasses import dataclass, field, replace
+from collections.abc import Callable, Hashable, Iterable
+from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Callable, Final, Hashable, Iterable, Literal
+from typing import Any, Final, Literal
 
 import yaml
-
-from lark import Lark, Token, Transformer, v_args
+from lark import Lark, Transformer, v_args
 
 Operator: Final = Enum("Operator", "GT GTE LT LTE EQ NE BY TRUE FALSE EXISTS NONE")
 Trigger: Final = Enum("Trigger", "IF WHILE")
@@ -65,7 +63,7 @@ def extract_dataextractor(start) -> Iterable[DataExtractor]:
     elif isinstance(start, DataFunction):
         for arg in start.args:
             yield from extract_dataextractor(arg)
-    elif isinstance(start, (DataCondition, Operation)):
+    elif isinstance(start, DataCondition | Operation):
         yield from extract_dataextractor(start.lval)
         yield from extract_dataextractor(start.rval)
     elif isinstance(start, LogicBinding):
@@ -139,18 +137,18 @@ class Condition(DateAware):
                 result = lval <= rval
             case Operator.EQ:
                 # fmt: off
-                if isinstance(lval, (int, float, Decimal)) and isinstance(rval, (int, float, Decimal)):
+                if isinstance(lval, int | float | Decimal) and isinstance(rval, int | float | Decimal):
                     result = math.isclose(lval, rval, rel_tol=1e-06)
-                elif isinstance(rval, (bool, type(None))):
+                elif isinstance(rval, bool | type(None)):
                     result = lval is rval
                 else:
                     result = lval == rval
                 # fmt: on
             case Operator.NE:
                 # fmt: off
-                if isinstance(lval, (int, float, Decimal)) and isinstance(rval, (int, float, Decimal)):
+                if isinstance(lval, int | float | Decimal) and isinstance(rval, int | float | Decimal):
                     result = not math.isclose(lval, rval, rel_tol=1e-06)
-                elif isinstance(rval, (bool, type(None))):
+                elif isinstance(rval, bool | type(None)):
                     result = lval is not rval
                 else:
                     result = lval != rval
@@ -655,7 +653,7 @@ class IfThenIntent(Checkable):
                 yield start
                 for arg in start.args:
                     yield from extract(arg)
-            elif isinstance(start, (DataCondition, Operation)):
+            elif isinstance(start, DataCondition | Operation):
                 yield from extract(start.lval)
                 yield from extract(start.rval)
             elif isinstance(start, LogicBinding):
@@ -916,7 +914,9 @@ class TreeToIfThen(Transformer):
         return symbol
 
     def opspec(self, resolvedops):
-        assert None, "This rule should never trigger because 'opspec' is inlined with '?' into 'subspec'"
+        assert None, (
+            "This rule should never trigger because 'opspec' is inlined with '?' into 'subspec'"
+        )
 
     def operation(self, oper):
         # print("OPERATION:", oper)
@@ -946,15 +946,15 @@ class TreeToIfThen(Transformer):
         return OperationSub(lval, rval)
 
     def mul(self, lval, rval):
-        assert not isinstance(
-            rval.value, dict
-        ), "We can't multiply percents, only add and subtract"
+        assert not isinstance(rval.value, dict), (
+            "We can't multiply percents, only add and subtract"
+        )
         return OperationMul(lval, rval)
 
     def div(self, lval, rval):
-        assert not isinstance(
-            rval.value, dict
-        ), "We can't divide percents, only add and subtract"
+        assert not isinstance(rval.value, dict), (
+            "We can't divide percents, only add and subtract"
+        )
         return OperationDiv(lval, rval)
 
     def junction_or(self, lcond, rcond):
@@ -1315,7 +1315,9 @@ class IfThenPeers(CheckableRuntime):
 
         # convert lists to tuples (slightly faster for iteration)
         # Cast keys to Symbol type for type compatibility
-        toplevel: dict[Symbol, tuple[CheckableRuntime, ...]] = {k: tuple(v) for k, v in checkmap.items()}
+        toplevel: dict[Symbol, tuple[CheckableRuntime, ...]] = {
+            k: tuple(v) for k, v in checkmap.items()
+        }
         self.checkmap |= toplevel
 
     def check(self, symbol: Symbol) -> IfThenRuntimeResultInternal | Literal[False]:
@@ -1700,9 +1702,9 @@ class IfThenConfigLoader:
 
         # Names of predicates are object keys in the yaml tree structure (i.e. there is no '- name: [NAME]' key)
 
-        assert isinstance(
-            body["predicates"], dict
-        ), f"Predicates must exist and must be a map of names to predicates!"
+        assert isinstance(body["predicates"], dict), (
+            "Predicates must exist and must be a map of names to predicates!"
+        )
 
         predicates: Final = body["predicates"]
 
@@ -1805,7 +1807,9 @@ class IfThenConfigLoader:
                     # also, if we are waiting on ourself (recursion forever), then replace the 'self' waiting key with our own id
                     fixed = frozenset(
                         [
-                            id(recheck) if w == ":self" else nameToIdMapper.get(str(w), w)
+                            id(recheck)
+                            if w == ":self"
+                            else nameToIdMapper.get(str(w), w)
                             for w in waiting
                         ]
                     )

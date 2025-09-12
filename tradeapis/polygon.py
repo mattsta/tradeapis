@@ -1,21 +1,22 @@
 import asyncio
 import os
 from collections.abc import Iterable
-
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import aiohttp
 import orjson
-
 import websockets
 from dotenv import dotenv_values
-
 from loguru import logger
 
 ENDPOINT_STOCKS = "wss://socket.polygon.io/stocks"
 ENDPOINT_STOCKS_DELAYED = ENDPOINT_STOCKS.replace("socket", "delayed")
 ENDPOINT_OPTIONS = "wss://socket.polygon.io/options"
 ENDPOINT_OPTIONS_DELAYED = ENDPOINT_OPTIONS.replace("socket", "delayed")
+ENDPOINT_INDEX = "wss://socket.polygon.io/indices"
+ENDPOINT_INDEX_DELAYED = ENDPOINT_INDEX.replace("socket", "delayed")
+ENDPOINT_FUTURES = "wss://socket.polygon.io/futures"
+ENDPOINT_FUTURES_DELAYED = ENDPOINT_FUTURES.replace("socket", "delayed")
 
 # TODO: refactor as better class encapsulation instead of being a module/env global.
 CONFIG = {**dotenv_values(".env.tradeapis"), **os.environ}
@@ -124,8 +125,8 @@ def historicalBars(
     symbol: str,
     combine: int,
     timespan: str,
-    dateFrom: str, # | int,
-    dateTo: str, #| int,
+    dateFrom: str,  # | int,
+    dateTo: str,  # | int,
     adjusted: bool = True,
 ):
     """Endpoint returns bars aggregated.
@@ -162,7 +163,7 @@ def optionsContracts(
     contractType is 'call' or 'put'
     """
 
-    url = f"https://api.polygon.io/v3/reference/options/contracts"
+    url = "https://api.polygon.io/v3/reference/options/contracts"
 
     # yes, string "true" / "false" here is correct because args aren't JSON, it's all just int/string conversions
     args = {"sort": "expiration_date", "order": "asc", "apiKey": auth["params"]}
@@ -205,7 +206,7 @@ def splits(session, symbol: str, reverse=False):
     #       request daily "tickers.gt=A" to get everything with one original
     #       fetch with full pagination until the end (instead of all directly)
     # See "Query Filter Extensions" at https://polygon.io/blog/api-pagination-patterns/
-    url = f"https://api.polygon.io/v3/reference/splits"
+    url = "https://api.polygon.io/v3/reference/splits"
 
     # we want a dual sort here so provide list of tuples so a dict
     # doesn't overwrite the same shared key...
@@ -250,7 +251,7 @@ def symbolFinancial(session, symbol: str):
 
 
 def exchanges(session, asset: str = "stocks"):
-    url = f"https://api.polygon.io/v3/reference/exchanges"
+    url = "https://api.polygon.io/v3/reference/exchanges"
 
     # Other assets include: options, crypto, fx
     args = {"asset_class": asset, "apiKey": auth["params"]}
@@ -275,7 +276,7 @@ def losers(session):
 
 # https://polygon.io/docs/get_v2_snapshot_locale_us_markets_stocks_tickers_anchor
 def snapshot(session):
-    url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
+    url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
     args = {"apiKey": auth["params"]}
 
     return session.get(url, params=args)
@@ -341,7 +342,7 @@ async def polygonReconnect(cxn):
     except:
         pass
 
-    return await polygonConnection()
+    return await polygonConnect()
 
 
 @dataclass

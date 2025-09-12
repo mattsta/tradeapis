@@ -1,19 +1,13 @@
 import dataclasses
-from dataclasses import dataclass, field
-from typing import *
-
+from dataclasses import dataclass
 from enum import Flag
-
 from itertools import chain
 
 # The parser generator
-import lark
-
 # debug printing helper (colors! actually formats dataclasses properly,
 # unlike pprint in Python <= 3.9 where pprint doesn't format them at all)
 import prettyprinter as pp  # type: ignore
-from lark import Lark, Token, Transformer, UnexpectedCharacters, UnexpectedToken, v_args
-from loguru import logger
+from lark import Lark, Transformer, v_args
 
 # tell pretty printer to check input for dataclass printing
 pp.install_extras(["dataclasses"], warn_on_error=False)
@@ -57,14 +51,14 @@ class Order:
 
     # For more detailed use cases, you can attach limit prices directly
     # for fees calculations.
-    limit: Optional[float] = None
+    limit: float | None = None
 
     def __post_init__(self):
         self.symbol = self.symbol.upper().strip()
         if self.symbol.count(" ") >= 2:
-            assert not looksLikeOrderCommand(
-                self.symbol
-            ), f"Why does your order symbol look like an order command? Requested order symbol: {self.symbol=} but our commands have {FORBIDDEN_SYMBOL_PARTS=}"
+            assert not looksLikeOrderCommand(self.symbol), (
+                f"Why does your order symbol look like an order command? Requested order symbol: {self.symbol=} but our commands have {FORBIDDEN_SYMBOL_PARTS=}"
+            )
 
     def underlying(self) -> Symbol:
         return self.symbol[:-15]
@@ -111,7 +105,7 @@ class Order:
 
         return False
 
-    def strike(self) -> Optional[float]:
+    def strike(self) -> float | None:
         """If symbol is an OCC symbol, return strike price as a float."""
         if len(self.symbol) > 15:
             return int(self.symbol[-8:]) / 1000
@@ -129,8 +123,8 @@ class OrderRequest:
 
     orders: list[Order]
     size: int = 1  # default to use 'multiplier' quantity of each order
-    start: Optional[datetime.datetime] = None
-    end: Optional[datetime.datetime] = None
+    start: datetime.datetime | None = None
+    end: datetime.datetime | None = None
 
     def isSpread(self) -> bool:
         """True if more than 1 order is populated, False otherwise."""

@@ -9,8 +9,8 @@ from typing import Final
 
 from lark import Lark, Token, Transformer, v_args
 
-from .buylang import looksLikeOrderCommand, OLang as BuyLang, Order
-
+from .buylang import OLang as BuyLang
+from .buylang import Order, looksLikeOrderCommand
 
 # global for dividing things by 100 in decimal format
 D100: Final = Decimal("100")
@@ -39,7 +39,9 @@ class DecimalShort(NamedDecimal): ...
 class DecimalLongCash(DecimalLong, DecimalCash):
     def nice(self) -> str:
         return f"${self}"
-class DecimalLongShares(DecimalLong, DecimalShares): ...
+class DecimalLongShares(DecimalLong, DecimalShares):
+    def nice(self) -> str:
+        return f"{self}"
 class DecimalShortShares(DecimalShort, DecimalShares):
     def nice(self) -> str:
         return f"-{self}"
@@ -52,7 +54,7 @@ Qty = DecimalLongShares | DecimalShortShares | DecimalLongCash | DecimalShortCas
 
 
 def becomeDecimal(x: int | float | None) -> Decimal | None:
-    if isinstance(x, (int, float, str)):
+    if isinstance(x, int | float | str):
         return Decimal(str(x))
 
     return x
@@ -148,7 +150,7 @@ class OrderIntent:
         # Require using exact LONG or SHORT types instead of just a generic undetermined "Decimal" type
         # (because the profit/loss math changes direction depending on the _type_ of the .qty field, so if it
         #  isn't Long or Short, the profit and loss math is completely wrong)
-        assert isinstance(self.qty, (DecimalLong, DecimalShort))
+        assert isinstance(self.qty, DecimalLong | DecimalShort)
 
         return isinstance(self.qty, DecimalLong)
 
@@ -285,13 +287,13 @@ class OrderIntent:
         if not steps or steps < 0:
             return []
 
-        assert bool(points) ^ bool(
-            percent
-        ), "You must specfiy *one* of *either* 'points' or 'percent' but not both!"
+        assert bool(points) ^ bool(percent), (
+            "You must specfiy *one* of *either* 'points' or 'percent' but not both!"
+        )
 
-        assert not isinstance(
-            self.limit, Calculation
-        ), "To generate a ladder you must have a concrete limit price instead of a Calculation!"
+        assert not isinstance(self.limit, Calculation), (
+            "To generate a ladder you must have a concrete limit price instead of a Calculation!"
+        )
 
         # convert parameters to decimal objects so all the math works without errors
         # (these are noop if the values are already decimals)

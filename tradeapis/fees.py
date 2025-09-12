@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 
 def mn(val):
@@ -39,8 +38,8 @@ class OptionFees:
     # Described as tuples (contractCount, contractPrice)
     # note: 'contractPrice' is the contract price, not the total price
     #       (i.e. 2.30 instead of 230.00)
-    legs_buy: Optional[list[tuple[int, float]]] = None
-    legs_sell: Optional[list[tuple[int, float]]] = None
+    legs_buy: list[tuple[int, float]] | None = None
+    legs_sell: list[tuple[int, float]] | None = None
 
     @staticmethod
     def legsTwo(count, buy, sell):

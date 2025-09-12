@@ -1,12 +1,10 @@
-from typing import Sequence
-import datetime
 import bisect
+import datetime
+from collections.abc import Sequence
 
 import pandas as pd
-
+from cachetools import TTLCache, cached
 from mutil.timer import Timer
-
-from cachetools import cached, TTLCache
 
 # Default cache current-date calendars for for 6.5 hours
 CALENDAR_CACHE_SECONDS = 60 * 60 * 6.5

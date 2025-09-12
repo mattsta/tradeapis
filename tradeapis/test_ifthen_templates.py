@@ -7,7 +7,6 @@ from tradeapis.ifthen_templates import (
     BUILTIN_TEMPLATES,
     IfThenRuntimeTemplateExecutor,
     _template_cache,
-    create_algo_flipper_executor,
     create_template_args_for_algo_flipper,
 )
 
@@ -324,7 +323,7 @@ def test_jinja2_advanced_features():
 def test_activation_management():
     """Test template activation, deactivation, and tracking."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Test pure activate() method with proper DSL format
     dsl_text = """
@@ -374,7 +373,7 @@ def test_activation_management():
 def test_create_and_activate_with_name():
     """Test create_and_activate with the new name parameter."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Create template args
     args = create_template_args_for_algo_flipper(
@@ -409,7 +408,7 @@ def test_create_and_activate_with_name():
 def test_deactivate_all():
     """Test deactivating all templates at once."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Activate multiple templates
     dsl1 = """
@@ -446,7 +445,7 @@ def test_integration_example():
     runtime = IfThenRuntime()
 
     # Create template executor
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Create MNQ flipper
     mnq_args = create_template_args_for_algo_flipper(
@@ -487,7 +486,7 @@ def test_integration_example():
 def test_performance_tracking_basic():
     """Test basic performance tracking functionality."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Test state_update with valid data
     executor.state_update("algo1", {"profit": 100.0, "win": True})
@@ -514,7 +513,7 @@ def test_performance_tracking_basic():
 def test_performance_tracking_summary():
     """Test performance summary calculation."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Add events for testing
     executor.state_update("test_algo", {"profit": 100.0, "win": True})
@@ -543,7 +542,7 @@ def test_performance_tracking_summary():
 def test_performance_tracking_streak_calculation():
     """Test streak calculation logic."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Test win streak
     executor.state_update("streak_test", {"profit": 10.0, "win": True})
@@ -575,7 +574,7 @@ def test_performance_tracking_streak_calculation():
 def test_performance_tracking_with_metadata():
     """Test performance tracking with custom metadata."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Add event with custom metadata
     metadata = {
@@ -602,7 +601,7 @@ def test_performance_tracking_with_metadata():
 def test_performance_tracking_nonexistent_algo():
     """Test performance tracking for non-existent algorithms."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Test score_get for nonexistent algo
     events = executor.score_get("nonexistent")
@@ -626,7 +625,7 @@ def test_performance_tracking_nonexistent_algo():
 def test_performance_tracking_edge_cases():
     """Test edge cases in performance tracking."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Test with zero profit
     executor.state_update("edge_test", {"profit": 0.0, "win": True})
@@ -653,7 +652,7 @@ def test_performance_tracking_edge_cases():
 def test_performance_tracking_state_update_validation():
     """Test state_update input validation."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Test missing required fields
     with pytest.raises(ValueError, match="profit"):
@@ -673,7 +672,7 @@ def test_performance_tracking_state_update_validation():
 def test_performance_tracking_multiple_algos():
     """Test performance tracking for multiple algorithms independently."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Add events for different algorithms
     executor.state_update("algo_a", {"profit": 100.0, "win": True})
@@ -759,7 +758,7 @@ def test_explicit_constructors():
 def test_performance_integration_with_activation():
     """Test performance tracking integrated with template activation."""
     runtime = IfThenRuntime()
-    executor = create_algo_flipper_executor(runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
 
     # Create and activate a template
     args = create_template_args_for_algo_flipper(
@@ -809,7 +808,7 @@ if __name__ == "__main__":
 
     # Method 1: Direct usage
     print("\n1. Direct Template Usage:")
-    executor = IfThenRuntimeTemplateExecutor("algo_flipper.dsl", runtime)
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
     print(f"Template variables: {executor.get_template_variables()}")
 
     args = create_template_args_for_algo_flipper(
@@ -827,7 +826,9 @@ if __name__ == "__main__":
 
     # Method 2: Multi-symbol advanced template
     print("\n2. Multi-Symbol Template with Jinja2 Features:")
-    multi_executor = IfThenRuntimeTemplateExecutor("multi_symbol_flipper.dsl", runtime)
+    multi_executor = IfThenRuntimeTemplateExecutor.from_builtin(
+        runtime, "multi_symbol_flipper.dsl"
+    )
 
     from tradeapis.ifthen_templates import create_symbol_config_for_flipper
 
@@ -852,12 +853,14 @@ if __name__ == "__main__":
 
     # Method 3: Caching demonstration
     print("\n3. Template Caching:")
-    executor3 = create_algo_flipper_executor(runtime)
+    executor3 = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
     print(f"Cache hit: {executor3._compiled_template is executor._compiled_template}")
 
     # Method 4: Performance tracking demonstration
     print("\n4. Performance Tracking:")
-    perf_executor = create_algo_flipper_executor(IfThenRuntime())
+    perf_executor = IfThenRuntimeTemplateExecutor.from_builtin(
+        IfThenRuntime(), "algo_flipper.dsl"
+    )
 
     # Simulate some trading events
     perf_executor.state_update("demo_algo", {"profit": 150.0, "win": True})

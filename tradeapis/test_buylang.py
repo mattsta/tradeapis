@@ -1,4 +1,4 @@
-from tradeapis.buylang import OLang, OrderRequest, Order, Side
+from tradeapis.buylang import OLang, Order, OrderRequest, Side
 
 
 def test_stock():

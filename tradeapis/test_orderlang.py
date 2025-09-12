@@ -3,10 +3,8 @@ from decimal import Decimal
 import pytest
 
 from tradeapis.buylang import Order, OrderRequest, Side
-
 from tradeapis.orderlang import (
     Calculation,
-    DecimalCash,
     DecimalLong,
     DecimalLongCash,
     DecimalLongShares,
@@ -2249,10 +2247,10 @@ def test_ladder_implicit_pct_positive_negative_growth():
     ol = OrderLang()
     order = ol.parse(cmd)
 
-    assert str(DecimalLongShares(100)) == "100"
-    assert str(DecimalShortShares(100)) == "-100"
-    assert str(DecimalLongCash(100)) == "$100"
-    assert str(DecimalShortCash(100)) == "-$100"
+    assert str(DecimalLongShares(100).nice()) == "100"
+    assert str(DecimalShortShares(100).nice()) == "-100"
+    assert str(DecimalLongCash(100).nice()) == "$100"
+    assert str(DecimalShortCash(100).nice()) == "-$100"
 
     assert order == result
 

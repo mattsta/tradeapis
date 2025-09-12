@@ -1,5 +1,6 @@
-import tradeapis.rounder as rounder
 from decimal import Decimal
+
+import tradeapis.rounder as rounder
 
 
 # SPX

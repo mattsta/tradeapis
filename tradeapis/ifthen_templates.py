@@ -1072,31 +1072,6 @@ start: {% for symbol_config in symbols %}{{ symbol_config.name }}_entrypoint{% i
 }
 
 
-def create_algo_flipper_executor(
-    runtime: IfThenRuntime,
-) -> IfThenRuntimeTemplateExecutor:
-    """DEPRECATED: Use IfThenRuntimeTemplateExecutor.from_builtin() instead.
-
-    This convenience function hides the explicit template source and will be removed
-    in a future version. Use the explicit constructor instead:
-
-    # Replace this:
-    executor = create_algo_flipper_executor(runtime)
-
-    # With this:
-    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
-    """
-    import warnings
-
-    warnings.warn(
-        "create_algo_flipper_executor() is deprecated. "
-        "Use IfThenRuntimeTemplateExecutor.from_builtin(runtime, 'algo_flipper.dsl') instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
-
-
 def create_template_args_for_algo_flipper(
     algo_symbol: str,
     watch_symbol: str,

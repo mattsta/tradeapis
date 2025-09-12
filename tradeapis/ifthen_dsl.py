@@ -1,9 +1,8 @@
-from lark import Lark, Transformer, Tree
-from dataclasses import dataclass, field
-from typing import Dict, List, Set, Tuple, Union, Optional
 import graphlib
-
 from collections import defaultdict
+from dataclasses import dataclass, field
+
+from lark import Lark, Transformer
 
 from .ifthen import IfThenRuntime, PredicateId
 
@@ -71,7 +70,7 @@ class TreeExpr(FlowAST):
 
 @dataclass
 class PeerExpr(FlowAST):
-    peers: List[FlowAST]
+    peers: list[FlowAST]
 
 
 @dataclass
@@ -226,8 +225,8 @@ class IfThenDSLLoader:
 
     def load(
         self, dsl_text: str, activate: bool = True
-    ) -> Tuple[int, Set[PredicateId]]:
-        """Parse DSL and load into runtime, returning (created_count, start_ids)"""
+    ) -> tuple[int, set[PredicateId], set[PredicateId]]:
+        """Parse DSL and load into runtime, returning (created_count, start_ids, all_ids)"""
 
         # Parse and transform
         try:
@@ -245,7 +244,7 @@ class IfThenDSLLoader:
                 raise DSLValidationError(
                     f"Syntax error at line {error_line}:\n{context}\n{e}"
                 )
-            raise DSLValidationError(f"Syntax error in {filename}: {e}")
+            raise DSLValidationError(f"Syntax error: {e}")
 
         statements, start_names = self.transformer.transform(tree)
 
@@ -253,8 +252,8 @@ class IfThenDSLLoader:
         self._validate_dsl(statements, start_names)
 
         # Separate predicates and flows
-        predicates: Dict[str, str] = {}
-        flows: Dict[str, FlowAST] = {}
+        predicates: dict[str, str] = {}
+        flows: dict[str, FlowAST] = {}
 
         for stmt in statements:
             if isinstance(stmt, PredicateAssignment):
@@ -267,7 +266,7 @@ class IfThenDSLLoader:
         processing_order = list(graphlib.TopologicalSorter(dependencies).static_order())
 
         # Process in dependency order
-        name_to_id: Dict[str, PredicateId] = {}
+        name_to_id: dict[str, PredicateId] = {}
         created_count = 0
 
         for name in processing_order:
@@ -296,7 +295,7 @@ class IfThenDSLLoader:
 
         return created_count, start_ids, set(name_to_id.values())
 
-    def _get_error_context(self, lines: List[str], line_no: int, col_no: int):
+    def _get_error_context(self, lines: list[str], line_no: int, col_no: int):
         """Show error context with pointer"""
         if 0 < line_no <= len(lines):
             line = lines[line_no - 1]
@@ -304,7 +303,7 @@ class IfThenDSLLoader:
             return f"  {line}\n  {pointer}"
         return ""
 
-    def _validate_dsl(self, statements: List, start_names: List[str]):
+    def _validate_dsl(self, statements: list, start_names: list[str]):
         """Comprehensive validation of DSL structure"""
 
         predicates = {}
@@ -361,11 +360,11 @@ class IfThenDSLLoader:
         for name, pred_text in predicates.items():
             try:
                 # Use the runtime's parser to validate
-                test_parse = self.ifthenRuntime.ifthen.parse(pred_text)
+                self.ifthenRuntime.ifthen.parse(pred_text)
             except Exception as e:
                 raise DSLValidationError(f"Invalid predicate syntax in '{name}': {e}")
 
-    def _check_circular_deps(self, flows: Dict[str, FlowAST]):
+    def _check_circular_deps(self, flows: dict[str, FlowAST]):
         """Check for unintentional circular dependencies"""
         # Build adjacency list excluding self-references
         graph = defaultdict(set)
@@ -409,13 +408,13 @@ class IfThenDSLLoader:
                     )
 
     def _build_dependencies(
-        self, predicates: Dict[str, str], flows: Dict[str, FlowAST]
-    ) -> Dict[str, Set[str]]:
+        self, predicates: dict[str, str], flows: dict[str, FlowAST]
+    ) -> dict[str, set[str]]:
         """Build dependency graph for topological sorting"""
-        deps: Dict[str, Set[str]] = {name: set() for name in predicates}
+        deps: dict[str, set[str]] = {name: set() for name in predicates}
         deps.update({name: set() for name in flows})
 
-        def extract_deps(expr: FlowAST, exclude_self: bool = False) -> Set[str]:
+        def extract_deps(expr: FlowAST, exclude_self: bool = False) -> set[str]:
             """Extract all identifier dependencies from an expression"""
             if isinstance(expr, IdentifierRef):
                 return {expr.name}
@@ -446,11 +445,11 @@ class IfThenDSLLoader:
         return deps
 
     def _create_flow(
-        self, name: str, expr: FlowAST, name_to_id: Dict[str, PredicateId]
-    ) -> Optional[PredicateId]:
+        self, name: str, expr: FlowAST, name_to_id: dict[str, PredicateId]
+    ) -> PredicateId | None:
         """Create a flow from an AST expression"""
 
-        def resolve_expr(expr: FlowAST) -> Optional[PredicateId]:
+        def resolve_expr(expr: FlowAST) -> PredicateId | None:
             """Resolve an expression to a predicate ID"""
             if isinstance(expr, IdentifierRef):
                 return name_to_id.get(expr.name)
@@ -487,7 +486,7 @@ class IfThenDSLLoader:
         return resolve_expr(expr)
 
     def _fix_self_references(
-        self, flows: Dict[str, FlowAST], name_to_id: Dict[str, PredicateId]
+        self, flows: dict[str, FlowAST], name_to_id: dict[str, PredicateId]
     ):
         """Fix self-references in trees after all flows are created"""
 
@@ -506,7 +505,7 @@ class IfThenDSLLoader:
 
         def collect_self_refs(
             name: str, expr: FlowAST, current_id: PredicateId
-        ) -> List[Tuple[PredicateId, List[PredicateId]]]:
+        ) -> list[tuple[PredicateId, list[PredicateId]]]:
             """Collect all trees that need self-reference updates"""
             updates = []
 

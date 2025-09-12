@@ -1,31 +1,18 @@
-import aiohttp
 import asyncio
+import dataclasses
+from bisect import bisect_left
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from typing import Literal
+
+import aiohttp
 import orjson
 import pandas as pd  # type: ignore
 import websockets
-
-import re
-import os
-
 from loguru import logger
-from typing import Dict, List, Any, Union, Optional, Literal, Iterable
-
-from dataclasses import dataclass, field
-import dataclasses
-
-from bisect import bisect_left
-
-import io
-import arrow  # type: ignore
-import time
-import datetime
-from collections import defaultdict
-
 from mutil.dcache import FetchCache  # type: ignore
 
 # from mutil.dates import thirdFridayForMonth, thirdFridays  # type: ignore
-from mutil.numeric import roundnear5, roundnear10  # type: ignore
-
 from tradeapis.data import MarketMetadata
 
 
@@ -103,7 +90,7 @@ def occEncode(what):
         return what
 
 
-def prefixDictKeys(ds: List[Dict[str, Union[str, int, float]]]):
+def prefixDictKeys(ds: list[dict[str, str | int | float]]):
     # otoco: 'type' must be one of limit, stop, stop_limit
     # oto: first: limit, stop, stop_limit; second: market, + prev
     # oco: same as oto
@@ -143,13 +130,13 @@ class Order:
     duration: Literal["day", "gtc", "pre", "post"]
     symbol: str
     quantity: int
-    side: Union[
-        Literal["buy", "buy_to_cover", "sell", "sell_short"],
-        Literal["buy_to_open", "buy_to_close", "sell_to_open", "sell_to_close"],
-    ]
-    price: Optional[float]
-    option_symbol: Optional[str]
-    stop: Optional[float] = None
+    side: (
+        Literal["buy", "buy_to_cover", "sell", "sell_short"]
+        | Literal["buy_to_open", "buy_to_close", "sell_to_open", "sell_to_close"]
+    )
+    price: float | None
+    option_symbol: str | None
+    stop: float | None = None
 
     def createClosingOrder(self):
         closing = self.copy()
@@ -282,8 +269,8 @@ class OrderMultileg:
     type: Literal["market", "debit", "credit", "even"]
     duration: Literal["day", "gtc"]
 
-    legs: List[Leg]
-    price: Optional[float] = None  # not required for Market orders
+    legs: list[Leg]
+    price: float | None = None  # not required for Market orders
     what: str = "multileg"
 
     def create(self):
@@ -299,7 +286,7 @@ class OrderMultileg:
 
 @dataclass
 class OrderTrigger:
-    legs: List[Order]
+    legs: list[Order]
 
     def create(self):
         out = dataclasses.asdict(self)
@@ -360,7 +347,7 @@ class Position:
 
 @dataclass
 class Spread:
-    positions: List[Position]
+    positions: list[Position]
 
     def close(self, price="walk"):
         root = rootFromOCC(positions[0].symbol)
@@ -401,16 +388,16 @@ class TradierCredentials:
     credentialMap: dict[str, str]  # map of {mode: api key}
 
     # live market data websocket session id
-    sessionId: Optional[str] = None
+    sessionId: str | None = None
 
     # live account updates websocket session id
-    sessionIdAccount: Optional[str] = None
+    sessionIdAccount: str | None = None
 
     def __post_init__(self):
         mode = self.mode
-        assert (
-            mode == "dev" or mode == "prod" or mode == "sandbox"
-        ), f"Mode must be 'dev' or 'prod' or 'sandbox' but you gave: {mode}"
+        assert mode == "dev" or mode == "prod" or mode == "sandbox", (
+            f"Mode must be 'dev' or 'prod' or 'sandbox' but you gave: {mode}"
+        )
 
         def genLoginHeader(key):
             return {
@@ -457,14 +444,14 @@ class TradierCredentials:
 
     # https://documentation.tradier.com/brokerage-api/markets/get-etb
     def getETB(self):
-        url, headers = self.urlHeaders(f"v1/markets/etb")
+        url, headers = self.urlHeaders("v1/markets/etb")
         return FetchCache(
             self.session, url, "etb-list", refreshMinutes=300, headers=headers
         ).get()
 
     # https://documentation.tradier.com/brokerage-api/user/get-profile
     def getProfile(self):
-        url, headers = self.urlHeaders(f"v1/user/profile")
+        url, headers = self.urlHeaders("v1/user/profile")
         return self.session.get(url, headers=headers)
 
     # https://documentation.tradier.com/brokerage-api/accounts/get-account-balance
@@ -569,11 +556,7 @@ class TradierCredentials:
 
     # https://documentation.tradier.com/brokerage-api/markets/get-options-expirations
     def getExpirations(self, symbol):
-        # Use SPXW expirations for SPX because we can't query SPXW directly.
-        if symbol.upper() == "SPX":
-            symbol = "SPXW"
-
-        args = {"symbol": symbol}
+        args = {"symbol": symbol, "includeAllRoots": "true"}
         url, headers = self.urlHeaders("v1/markets/options/expirations")
 
         # Also modify symbol so things like BRK/A become BRK-A because
@@ -677,7 +660,7 @@ class TradierCredentials:
             await ws.send(req)
             return True
         except:
-            logger.exception(f"Failed to websocket subscribe?")
+            logger.exception("Failed to websocket subscribe?")
             return False
 
     # https://documentation.tradier.com/brokerage-api/streaming/wss-market-websocket
@@ -729,7 +712,7 @@ class TradierCredentials:
             await ws.send(req)
             return True
         except:
-            logger.exception(f"Failed to websocket subscribe to account events?")
+            logger.exception("Failed to websocket subscribe to account events?")
             return False
 
     # https://documentation.tradier.com/brokerage-api/streaming/wss-account-websocket
@@ -833,7 +816,7 @@ class TradierClient:
                 self.expirationAway("IWM"),
                 self.expirationAway("DIA"),
                 self.expirationAway("AAPL"),
-                self.expirationAway("FB"),
+                self.expirationAway("META"),
                 self.expirationAway("NVDA"),
                 self.expirationAway("SPY"),
                 self.expirationAway("TSLA"),
@@ -893,8 +876,14 @@ class TradierClient:
                 else:
                     assert "expirations" in got
                     # https://documentation.tradier.com/brokerage-api/markets/get-options-expirations
+                    exps = got["expirations"]
+                    if not exps:
+                        logger.error("Error: expirations result was empty :: {}", got)
+                        return None, None
+
                     dates = sorted(got["expirations"]["date"])[:dateRange]
             except:
+                logger.exception("What went wrong here?")
                 # any data errors we just skip over everything
                 return None, None
 

@@ -1,18 +1,15 @@
 """Helpers to fetch market metadata for option trading."""
 
+import csv
+import datetime
+import io
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
+from enum import Enum
+
 import aiohttp
 import arrow  # type: ignore
-import csv
-
-from enum import Enum
-from typing import Optional
-from collections import Counter
-from dataclasses import dataclass, field
-from collections import defaultdict
 import orjson
-import io
-import re
-
 from loguru import logger
 from mutil.dcache import FetchCache  # type: ignore
 from mutil.numeric import roundnear5, roundnear10  # type: ignore

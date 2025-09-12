@@ -1,5 +1,6 @@
-from mutil.numeric import roundnear, ROUND
 from dataclasses import dataclass, field
+
+from mutil.numeric import ROUND, roundnear
 
 
 @dataclass(slots=True)
