@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tradeapis"
-version = "3.3.3"
+version = "3.4.5"
 description = "Stock Market Data Utilities and API Wrappers for Tradier, Polygon"
 authors = ["Matt Stancliff <matt@genges.com>"]
 license = "Apache-2.0"
@@ -13,12 +13,12 @@ pandas = "^2.0.3"
 arrow = "^1.1.0"
 lark = "^1.0.0"
 prettyprinter = "^0.18.0"
-cachetools = "^5.2.0"
+cachetools = "^6.2.0"
 pandas-market-calendars = ">=4.1.4"
 loguru = ">0.6.0"
 
 # mutil = { path = "../../mutil/", develop = true }
-mutil = { git = "https://github.com/mattsta/mutil.git", tag="2.3.1" }
+mutil = { git = "https://github.com/mattsta/mutil.git", tag="2.4.5" }
 python-dotenv = "^1.0.0"
 beautifulsoup4 = "^4.11.1"
 diskcache = "^5.6.3"
@@ -33,7 +33,7 @@ numpy = "^2.1.1"
 clickhouse-driver = "^0.2.9"
 mypy = "^1.11.2"
 types-pyyaml = "^6.0.12.20240917"
-ruff = "^0.12.12"
+ruff = "^0.13.0"
 
 [tool.mypy]
 check_untyped_defs = true

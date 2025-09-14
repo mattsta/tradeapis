@@ -4,6 +4,10 @@ This module provides a comprehensive system for creating, activating, and monito
 reusable IfThen DSL templates for trading algorithms. It combines Jinja2 templating
 with activation lifecycle management and real-time performance tracking.
 
+The module provides two main interfaces:
+- **IfThenRuntimeTemplateExecutor**: Single-template executor for individual template management
+- **IfThenMultiTemplateManager**: Multi-template manager for handling multiple templates without external dictionaries
+
 ## Core Features
 
 ### 1. Template Management
@@ -11,6 +15,7 @@ with activation lifecycle management and real-time performance tracking.
 - **Built-in Templates**: Pre-defined templates for common trading patterns
 - **Template Caching**: Compiled templates are cached for performance
 - **Validation**: Template variable validation before rendering
+- **Multi-Template Support**: IfThenMultiTemplateManager for handling multiple templates simultaneously
 
 ### 2. Activation Lifecycle
 - **Named Activation**: Each template instance gets a unique name for tracking
@@ -268,6 +273,184 @@ dsl_text = executor.populate_template(args)
 executor.activate("distributed_algo", dsl_text)
 ```
 
+## Multi-Template Management
+
+### IfThenMultiTemplateManager - High-Level Multi-Template Abstraction
+
+For managing multiple templates simultaneously, use `IfThenMultiTemplateManager` which provides a clean
+abstraction over multiple `IfThenRuntimeTemplateExecutor` instances without requiring external dictionaries
+for tracking.
+
+#### Core Features
+
+- **Explicit Template Creation**: All templates must be explicitly registered before use
+- **Source Conflict Validation**: Template names are validated for exact source matches to prevent conflicts
+- **Dictionary-like Access**: Access registered templates via `manager["template_name"]`
+- **Hierarchical Naming**: Template instances use `template_name.instance_name` format
+- **Unified Performance Tracking**: Track performance across all templates through one interface
+- **Bulk Operations**: Deactivate by template or across all templates
+- **Multi-Source Support**: Create from builtin, file, or string templates
+
+#### Basic Multi-Template Usage
+
+```python
+from tradeapis.ifthen import IfThenRuntime
+from tradeapis.ifthen_templates import IfThenMultiTemplateManager, create_template_args_for_algo_flipper
+
+# Create manager
+runtime = IfThenRuntime()
+manager = IfThenMultiTemplateManager(runtime)
+
+# IMPORTANT: All templates must be explicitly created before use
+# Source conflict validation: if a template name already exists with the SAME source content,
+# the existing template is returned. If the name exists with DIFFERENT source content,
+# a ValueError is raised to prevent accidental conflicts.
+manager.from_builtin("algo_flipper.dsl", "algo_flipper")          # From builtin
+manager.from_file("/path/to/custom.dsl", "custom_strategy")       # From file
+manager.from_string("entry = 'if {{symbol}} > {{thresh}}: buy'", "breakout")  # From string
+
+# Now templates can be accessed via dictionary syntax
+algo_flipper = manager["algo_flipper"]  # This works after explicit creation
+
+# Create multiple algorithm instances with hierarchical naming
+args1 = create_template_args_for_algo_flipper("MNQ", "/NQM5", "/MNQ", "MNQ", 15, "fast-ema", 1)
+args2 = create_template_args_for_algo_flipper("ES", "/ESZ4", "/ES", "ES", 60, "slow-ema", 2)
+
+manager.activate("algo_flipper", "mnq_fast", args1)  # Creates "algo_flipper.mnq_fast"
+manager.activate("algo_flipper", "es_slow", args2)   # Creates "algo_flipper.es_slow"
+
+# List all active instances across all templates
+active = manager.list_all_active()  # ["algo_flipper.mnq_fast", "algo_flipper.es_slow"]
+
+# Performance tracking with hierarchical names
+manager.state_update("algo_flipper", "mnq_fast", {"profit": 150.0, "win": True})
+manager.state_update("algo_flipper", "es_slow", {"profit": -25.0, "win": False})
+
+# Get performance summaries for all active instances
+all_summaries = manager.get_all_performance_summaries()
+for instance_name, summary in all_summaries.items():
+    print(f"{instance_name}: {summary.win_rate:.1%} win rate, ${summary.total_profit} P&L")
+```
+
+#### Source Conflict Validation
+
+The manager implements strict source validation to prevent template conflicts:
+
+```python
+manager = IfThenMultiTemplateManager(runtime)
+
+# First creation succeeds
+executor1 = manager.from_builtin("algo_flipper.dsl", "my_template")
+
+# Calling again with SAME builtin returns existing instance
+executor2 = manager.from_builtin("algo_flipper.dsl", "my_template")
+assert executor1 is executor2  # Same instance returned
+
+# Calling with DIFFERENT source but same name raises ValueError
+try:
+    manager.from_builtin("simple_flipper.dsl", "my_template")  # Different builtin!
+except ValueError as e:
+    print(f"Conflict detected: {e}")  # Template name conflict
+
+# Same validation applies across all source types (builtin/file/string)
+try:
+    manager.from_string("different content", "my_template")  # Different source type!
+except ValueError as e:
+    print(f"Cross-source conflict: {e}")
+```
+
+This ensures template integrity and prevents accidental overwrites that could lead to unexpected behavior.
+
+#### Multi-Template Management Operations
+
+```python
+# Template-level operations
+manager.list_active_for_template("algo_flipper")  # List instances for specific template
+manager.deactivate_template("algo_flipper")       # Deactivate all instances of template
+manager.deactivate_all()                          # Deactivate everything
+
+# Individual instance management
+manager.activate("algo_flipper", "mnq_hedge", args)      # Activate specific instance
+manager.deactivate("algo_flipper", "mnq_hedge")          # Deactivate specific instance
+
+# Template introspection
+manager.get_template_names()                      # List registered templates
+manager.get_available_builtin_names()            # List available builtin templates
+manager.get_template_info("algo_flipper")        # Get template details
+
+# Performance tracking
+manager.state_update("algo_flipper", "mnq_fast", {"profit": 100.0, "win": True})
+summary = manager.get_performance_summary("algo_flipper", "mnq_fast")
+events = manager.get_performance_events("algo_flipper", "mnq_fast")
+```
+
+#### Complete Multi-Template Workflow
+
+```python
+# 1. Setup multiple templates for different strategies
+manager = IfThenMultiTemplateManager(runtime)
+
+manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+manager.from_builtin("breakout_monitor.dsl", "breakout_monitor")
+manager.from_builtin("simple_flipper.dsl", "simple_flipper")
+
+# 2. Create instances across multiple templates
+algorithms = [
+    ("algo_flipper", "mnq_fast", create_template_args_for_algo_flipper(
+        "MNQ", "/NQM5", "/MNQ", "MNQ", 15, "fast-ema", 1)),
+    ("algo_flipper", "es_slow", create_template_args_for_algo_flipper(
+        "ES", "/ESZ4", "/ES", "ES", 60, "slow-ema", 2)),
+    ("breakout_monitor", "spy_breakout", {
+        "symbol": "SPY", "high_level": "450", "low_level": "430", "timeframe": "60", "qty": "10"
+    })
+]
+
+for template_name, instance_name, args in algorithms:
+    manager.activate(template_name, instance_name, args)
+
+# 3. Monitor performance across all templates
+performance_events = [
+    ("algo_flipper", "mnq_fast", {"profit": 150.0, "win": True}),
+    ("algo_flipper", "es_slow", {"profit": -25.0, "win": False}),
+    ("breakout_monitor", "spy_breakout", {"profit": 75.0, "win": True})
+]
+
+for template_name, instance_name, event_data in performance_events:
+    manager.state_update(template_name, instance_name, event_data)
+
+# 4. Performance-based algorithm management
+all_summaries = manager.get_all_performance_summaries()
+underperformers = [name for name, summary in all_summaries.items()
+                   if summary.total_events >= 1 and (summary.win_rate < 0.5 or summary.total_profit < -50)]
+
+for instance_name in underperformers:
+    template_name, instance = instance_name.split(".", 1)
+    manager.deactivate(template_name, instance)
+    print(f"Deactivated underperformer: {instance_name}")
+
+# 5. Template-level analysis
+print(f"algo_flipper instances: {len(manager.list_active_for_template('algo_flipper'))}")
+print(f"Total active instances: {len(manager.list_all_active())}")
+```
+
+#### Key Benefits vs Manual Dictionary Tracking
+
+| **Manual Dictionary Approach** | **IfThenMultiTemplateManager** |
+|--------------------------------|--------------------------------|
+| `templates = {}` | No external tracking needed |
+| `templates["name"] = IfThenRuntimeTemplateExecutor.from_builtin(...)` | `manager.from_builtin("template.dsl", "name")` |
+| Manual instance name management | Hierarchical `template.instance` naming |
+| Per-executor performance tracking | Unified performance tracking |
+| Manual cleanup loops | `manager.deactivate_all()` |
+| No bulk template operations | Template-level operations |
+
+#### Error Handling
+
+- **Template Access**: Raises `ValueError` if template not explicitly created first
+- **Source Conflicts**: Raises `ValueError` if template name exists with different source content
+- **Missing Templates**: Clear error messages with available template list
+- **Performance Validation**: Same validation as single-executor approach
+
 ## Performance Monitoring Details
 
 ### Event Recording
@@ -314,6 +497,7 @@ RSI-based mean reversion strategy.
 - Template validation errors for missing variables
 - Jinja2 template rendering errors
 - Duplicate activation name errors
+- Source conflict validation errors for template name conflicts
 - Performance tracking validation errors
 
 Uses Jinja2 for powerful templating with caching for performance.
@@ -438,6 +622,14 @@ _template_cache = TemplateCache()
 class IfThenRuntimeTemplateExecutor:
     """Template executor for generating parameterized IfThen DSL configurations.
 
+    Note: a single instance of IfThenRuntimeTemplateExecutor is for controllig a _single template configuration_
+          you can then "instantiate" multiple times with different parameters for populating the template and
+          loading the custom populated tempalte into the IfThenRuntime system.
+
+          If you want to manage _multiple_ templates, you need to create one IfThenRuntimeTemplateExecutor
+          _per template_ you wish to instantiate (then apply custom arguments so it can run side the
+          IfThenRuntime system).
+
     This class provides a unified interface for loading templates from multiple sources
     (built-in, file, or string content) and executing them through the IfThen runtime system.
 
@@ -542,7 +734,7 @@ class IfThenRuntimeTemplateExecutor:
 
         Raises:
             FileNotFoundError: If template file does not exist
-            IOError: If template file cannot be read
+            OSError: If template file cannot be read
 
         Example:
             executor = IfThenRuntimeTemplateExecutor.from_file(runtime, "/path/to/custom.dsl")
@@ -979,6 +1171,7 @@ class IfThenRuntimeTemplateExecutor:
 
 # Built-in template definitions using Jinja2 syntax
 BUILTIN_TEMPLATES = {
+    ### ALGO FLIPPER
     "algo_flipper.dsl": """# Algo Flipper Template
 # Monitors an algorithm and flips positions when it stops
 # Template variables: watch_symbol, algo_symbol, trade_symbol, evict_symbol, timeframe, algo, qty, offset, profit_pts, loss_pts
@@ -1004,6 +1197,7 @@ flow entrypoint:
     primary -> unstopped -> @
 
 start: entrypoint""",
+    ### SIMPLE FLIPPER
     "simple_flipper.dsl": """# Simple Buy/Sell Flipper Template
 # Basic pattern for alternating between buy and sell signals
 # Template variables: symbol, buy_condition, sell_condition, qty, action_buy, action_sell
@@ -1018,6 +1212,7 @@ flow rotate:
     trade_signals -> @
 
 start: rotate""",
+    ### BREAKOUT MONITOR
     "breakout_monitor.dsl": """# Breakout Monitor Template
 # Monitors for price breakouts above/below key levels
 # Template variables: symbol, high_level, low_level, timeframe, qty
@@ -1029,6 +1224,7 @@ flow breakouts:
     breakout_high | breakout_low
 
 start: breakouts""",
+    ### MEAN REVERSION IDEA
     "mean_reversion.dsl": """# Mean Reversion Template
 # Monitors for oversold/overbought conditions and trades mean reversion
 # Template variables: symbol, timeframe, rsi_high, rsi_low, qty
@@ -1040,6 +1236,7 @@ flow mean_revert:
     oversold | overbought
 
 start: mean_revert""",
+    ### MULTIPLE SYMBOLS ATTEMPT
     "multi_symbol_flipper.dsl": """# Multi-Symbol Algo Flipper Template
 # Demonstrates Jinja2's power with loops and conditionals
 # Template variables: symbols (list), base_timeframe, base_algo, default_qty
@@ -1153,3 +1350,570 @@ def create_symbol_config_for_flipper(
         config["qty"] = qty
 
     return config
+
+
+@dataclass(slots=True)
+class IfThenMultiTemplateManager:
+    """Multi-template collection manager for easy access to multiple template executors.
+
+    This class provides a high-level abstraction for managing multiple IfThenRuntimeTemplateExecutor
+    instances, allowing you to work with different templates without manually tracking executors
+    in external dictionaries. All templates must be explicitly registered before use.
+
+    Features:
+    - Dictionary-like access to explicitly registered template executors
+    - Support for builtin, file, and string templates
+    - Hierarchical naming (template_name.instance_name) for activation tracking
+    - Unified performance tracking across all templates
+    - Bulk operations for lifecycle management
+
+    Usage Examples:
+        # Create manager
+        manager = IfThenMultiTemplateManager(runtime)
+
+        # Explicit template creation (all templates must be explicitly created)
+        manager.from_builtin("algo_flipper.dsl", "algo_flipper")  # Creates from builtin
+        algo_flipper = manager["algo_flipper"]  # Now this works
+
+        # Other explicit creation methods
+        custom_executor = manager.from_file("strategy.dsl")
+        string_executor = manager.from_string("if {{symbol}} price > {{thresh}}: buy", "breakout")
+
+        # Activate template instances with hierarchical names
+        args1 = create_template_args_for_algo_flipper("MNQ", "/NQM5", "/MNQ", "MNQ", 35, "fast-ema", 1)
+        args2 = create_template_args_for_algo_flipper("MNQ", "/NQM5", "/MNQ", "MNQ", 60, "slow-ema", 1)
+
+        manager.activate("algo_flipper", "mnq_fast", args1)
+        manager.activate("algo_flipper", "mnq_slow", args2)
+
+        # Performance tracking
+        manager.state_update("algo_flipper", "mnq_fast", {"profit": 150.0, "win": True})
+
+        # List all active instances across all templates
+        active_instances = manager.list_all_active()
+        # Returns: ["algo_flipper.mnq_fast", "algo_flipper.mnq_slow"]
+
+        # Get performance summaries for all templates
+        all_performance = manager.get_all_performance_summaries()
+
+        # Bulk deactivation
+        manager.deactivate_template("algo_flipper")  # Deactivates all instances of this template
+        manager.deactivate_all()  # Deactivates everything
+    """
+
+    # Core runtime dependency
+    ifthen_runtime: IfThenRuntime
+
+    # Internal storage for template executors
+    _executors: dict[str, IfThenRuntimeTemplateExecutor] = field(default_factory=dict)
+
+    def __getitem__(self, template_name: str) -> IfThenRuntimeTemplateExecutor:
+        """Get template executor for the given template name.
+
+        The template must have been explicitly created using from_builtin(), from_file(),
+        or from_string() methods before it can be accessed.
+
+        Args:
+            template_name: Name of the template that was explicitly registered
+
+        Returns:
+            IfThenRuntimeTemplateExecutor instance for this template
+
+        Raises:
+            ValueError: If template_name has not been explicitly registered
+
+        Example:
+            # Must explicitly create first
+            manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+            executor = manager["algo_flipper"]  # Now this works
+        """
+        if template_name in self._executors:
+            return self._executors[template_name]
+
+        raise ValueError(
+            f"Template '{template_name}' not found. You must explicitly create it first using from_builtin(), from_file(), or from_string(). Available templates: {list(self._executors.keys())}"
+        )
+
+    def __contains__(self, template_name: str) -> bool:
+        """Check if template has been explicitly registered.
+
+        Args:
+            template_name: Template name to check
+
+        Returns:
+            True if template has been explicitly registered, False otherwise
+        """
+        return template_name in self._executors
+
+    def from_builtin(
+        self, builtin_name: str, template_name: str | None = None
+    ) -> IfThenRuntimeTemplateExecutor:
+        """Create and register template executor from builtin template.
+
+        If a template with the same name and builtin source already exists, returns the existing one.
+        If a template with the same name but different source exists, raises an error.
+
+        Args:
+            builtin_name: Name of builtin template (e.g. "algo_flipper.dsl")
+            template_name: Name to register template under (defaults to builtin name without .dsl)
+
+        Returns:
+            IfThenRuntimeTemplateExecutor instance (existing or newly created)
+
+        Raises:
+            ValueError: If builtin_name is not found or name conflicts with different source
+
+        Example:
+            executor = manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+            # Or with automatic naming:
+            executor = manager.from_builtin("algo_flipper.dsl")  # registers as "algo_flipper"
+        """
+        if template_name is None:
+            # Auto-generate template name from builtin name
+            template_name = (
+                builtin_name.replace(".dsl", "")
+                if builtin_name.endswith(".dsl")
+                else builtin_name
+            )
+
+        # Check if template with this name already exists
+        if template_name in self._executors:
+            existing = self._executors[template_name]
+            expected_source_id = f"builtin:{builtin_name}"
+
+            if existing.template_source_id == expected_source_id:
+                # Exact match - return existing
+                return existing
+            else:
+                # Name conflict with different source
+                raise ValueError(
+                    f"Template name '{template_name}' already exists with source '{existing.template_source_id}', "
+                    f"cannot register builtin '{builtin_name}' with the same name. Use a different template name."
+                )
+
+        executor = IfThenRuntimeTemplateExecutor.from_builtin(
+            self.ifthen_runtime, builtin_name
+        )
+        self._executors[template_name] = executor
+        return executor
+
+    def from_file(
+        self, template_path: str | Path, template_name: str | None = None
+    ) -> IfThenRuntimeTemplateExecutor:
+        """Create and register template executor from file.
+
+        If a template with the same name and file source already exists, returns the existing one.
+        If a template with the same name but different source exists, raises an error.
+
+        Args:
+            template_path: Path to template file
+            template_name: Name to register template under (defaults to filename without extension)
+
+        Returns:
+            IfThenRuntimeTemplateExecutor instance (existing or newly created)
+
+        Raises:
+            FileNotFoundError: If template file does not exist
+            OSError: If template file cannot be read
+            ValueError: If name conflicts with different source
+
+        Example:
+            executor = manager.from_file("/path/to/strategy.dsl")
+            # Or with custom name:
+            executor = manager.from_file("/path/to/strategy.dsl", "my_strategy")
+        """
+        if template_name is None:
+            template_name = Path(template_path).stem
+
+        # Check if template with this name already exists
+        if template_name in self._executors:
+            existing = self._executors[template_name]
+            expected_source_id = f"file:{template_path}"
+
+            if existing.template_source_id == expected_source_id:
+                # Exact match - return existing
+                return existing
+            else:
+                # Name conflict with different source
+                raise ValueError(
+                    f"Template name '{template_name}' already exists with source '{existing.template_source_id}', "
+                    f"cannot register file '{template_path}' with the same name. Use a different template name."
+                )
+
+        executor = IfThenRuntimeTemplateExecutor.from_file(
+            self.ifthen_runtime, template_path
+        )
+        self._executors[template_name] = executor
+        return executor
+
+    def from_string(
+        self, template_content: str, template_name: str
+    ) -> IfThenRuntimeTemplateExecutor:
+        """Create and register template executor from string content.
+
+        If a template with the given name already exists and has the same content,
+        returns the existing one. If the name exists with different content, raises ValueError.
+
+        Args:
+            template_content: Template content as string
+            template_name: Name to register template under
+
+        Returns:
+            IfThenRuntimeTemplateExecutor instance (existing or newly created)
+
+        Raises:
+            ValueError: If template_name already exists with different content
+
+        Example:
+            template = "if {{symbol}} price > {{thresh}}: buy {{symbol}} {{qty}} MKT"
+            executor = manager.from_string(template, "price_breakout")
+        """
+        # Check for exact match with existing templates
+        if template_name in self._executors:
+            existing = self._executors[template_name]
+            content_hash = hashlib.sha256(template_content.encode()).hexdigest()[:12]
+            expected_source_id = f"string:{content_hash}"
+
+            if existing.template_source_id == expected_source_id:
+                return existing
+            else:
+                raise ValueError(
+                    f"Template name '{template_name}' already exists with source '{existing.template_source_id}', "
+                    f"but expected '{expected_source_id}' for the provided content"
+                )
+
+        content_hash = hashlib.sha256(template_content.encode()).hexdigest()[:12]
+        executor = IfThenRuntimeTemplateExecutor.from_string(
+            self.ifthen_runtime, template_content, f"string:{content_hash}"
+        )
+        self._executors[template_name] = executor
+        return executor
+
+    def get_template_names(self) -> list[str]:
+        """Get list of all registered template names.
+
+        Returns:
+            List of template names that are currently registered
+        """
+        return list(self._executors.keys())
+
+    def get_available_builtin_names(self) -> list[str]:
+        """Get list of available builtin template names (without .dsl extension).
+
+        Returns:
+            List of builtin template names that can be created via from_builtin()
+        """
+        return [name.replace(".dsl", "") for name in BUILTIN_TEMPLATES.keys()]
+
+    # Template Instance Activation and Management
+
+    def activate(
+        self,
+        template_name: str,
+        instance_name: str,
+        template_args: dict[str, Any],
+        enable: bool = True,
+    ) -> tuple[int, set[PredicateId], set[PredicateId]]:
+        """Activate a template instance with hierarchical naming.
+
+        Args:
+            template_name: Name of the template to use
+            instance_name: Name for this specific instance
+            template_args: Template arguments for population
+            enable: Whether to enable predicates immediately
+
+        Returns:
+            Tuple of (created_count, start_ids, all_ids) from activation
+
+        Raises:
+            ValueError: If template not found or instance name conflicts
+
+        Example:
+            manager.activate("algo_flipper", "mnq_fast", args)
+            # Creates instance named "algo_flipper.mnq_fast" internally
+        """
+        executor = self._get_executor(template_name)
+        full_instance_name = f"{template_name}.{instance_name}"
+        return executor.create_and_activate(
+            full_instance_name, template_args, enable=enable
+        )
+
+    def activate_from_populated_dsl(
+        self, template_name: str, instance_name: str, dsl_text: str, enable: bool = True
+    ) -> tuple[int, set[PredicateId], set[PredicateId]]:
+        """Activate a template instance from pre-populated DSL text.
+
+        Args:
+            template_name: Name of the template (must exist)
+            instance_name: Name for this specific instance
+            dsl_text: Pre-populated DSL text ready for activation
+            enable: Whether to enable predicates immediately
+
+        Returns:
+            Tuple of (created_count, start_ids, all_ids) from activation
+        """
+        executor = self._get_executor(template_name)
+        full_instance_name = f"{template_name}.{instance_name}"
+        return executor.activate(full_instance_name, dsl_text, enable=enable)
+
+    def deactivate(self, template_name: str, instance_name: str) -> bool:
+        """Deactivate a specific template instance.
+
+        Args:
+            template_name: Template name
+            instance_name: Instance name
+
+        Returns:
+            True if instance was found and deactivated
+        """
+        if template_name not in self._executors:
+            return False
+
+        executor = self._executors[template_name]
+        full_instance_name = f"{template_name}.{instance_name}"
+        return executor.deactivate(full_instance_name)
+
+    def deactivate_template(self, template_name: str) -> int:
+        """Deactivate all instances of a specific template.
+
+        Args:
+            template_name: Template name to deactivate all instances of
+
+        Returns:
+            Number of instances deactivated
+        """
+        if template_name not in self._executors:
+            return 0
+
+        executor = self._executors[template_name]
+        return executor.deactivate_all()
+
+    def deactivate_all(self) -> int:
+        """Deactivate all instances across all templates.
+
+        Returns:
+            Total number of instances deactivated
+        """
+        total_deactivated = 0
+        for executor in self._executors.values():
+            total_deactivated += executor.deactivate_all()
+        return total_deactivated
+
+    # Listing and Status Methods
+
+    def list_all_active(self) -> list[str]:
+        """Get list of all active template instances across all templates.
+
+        Returns:
+            List of full instance names in format "template_name.instance_name"
+        """
+        all_active = []
+        for template_name, executor in self._executors.items():
+            active_instances = executor.list_active()
+            # The executor stores full names like "template_name.instance_name"
+            # so we can add them directly
+            all_active.extend(active_instances)
+        return all_active
+
+    def list_active_for_template(self, template_name: str) -> list[str]:
+        """Get list of active instances for a specific template.
+
+        Args:
+            template_name: Template to get active instances for
+
+        Returns:
+            List of full instance names for this template, or empty list if template not found
+        """
+        if template_name not in self._executors:
+            return []
+
+        return self._executors[template_name].list_active()
+
+    def get_active_summary(self) -> dict[str, dict[str, Any]]:
+        """Get summary of all active instances across all templates.
+
+        Returns:
+            Dictionary mapping full instance names to summary info
+        """
+        all_summary = {}
+        for template_name, executor in self._executors.items():
+            template_summary = executor.get_active_summary()
+            all_summary.update(template_summary)
+        return all_summary
+
+    def get_template_info(self, template_name: str) -> dict[str, Any] | None:
+        """Get information about a specific template.
+
+        Args:
+            template_name: Template name to get info for
+
+        Returns:
+            Dictionary with template info or None if not found
+        """
+        if template_name not in self._executors:
+            return None
+
+        executor = self._executors[template_name]
+        return {
+            "template_name": template_name,
+            "source_id": executor.template_source_id,
+            "template_variables": list(executor.get_template_variables()),
+            "active_instances": executor.list_active(),
+            "active_count": len(executor.list_active()),
+        }
+
+    # Performance Tracking Methods
+
+    def state_update(
+        self, template_name: str, instance_name: str, event_data: dict[str, Any]
+    ) -> None:
+        """Record a performance event for a specific template instance.
+
+        Args:
+            template_name: Template name
+            instance_name: Instance name
+            event_data: Event data containing 'profit', 'win', and optional metadata
+
+        Example:
+            manager.state_update("algo_flipper", "mnq_fast", {"profit": 150.0, "win": True})
+        """
+        if template_name not in self._executors:
+            raise ValueError(f"Template '{template_name}' not found")
+
+        executor = self._executors[template_name]
+        full_instance_name = f"{template_name}.{instance_name}"
+        executor.state_update(full_instance_name, event_data)
+
+    def get_performance_summary(
+        self, template_name: str, instance_name: str
+    ) -> PerformanceSummary:
+        """Get performance summary for a specific template instance.
+
+        Args:
+            template_name: Template name
+            instance_name: Instance name
+
+        Returns:
+            PerformanceSummary for the instance
+        """
+        if template_name not in self._executors:
+            raise ValueError(f"Template '{template_name}' not found")
+
+        executor = self._executors[template_name]
+        full_instance_name = f"{template_name}.{instance_name}"
+        return executor.score_summary(full_instance_name)
+
+    def get_all_performance_summaries(self) -> dict[str, PerformanceSummary]:
+        """Get performance summaries for all active instances across all templates.
+
+        Returns:
+            Dictionary mapping full instance names to PerformanceSummary objects
+        """
+        all_summaries = {}
+        for template_name, executor in self._executors.items():
+            active_instances = executor.list_active()
+            for full_instance_name in active_instances:
+                summary = executor.score_summary(full_instance_name)
+                all_summaries[full_instance_name] = summary
+        return all_summaries
+
+    def get_performance_events(
+        self, template_name: str, instance_name: str
+    ) -> list[dict[str, Any]]:
+        """Get all performance events for a specific template instance.
+
+        Args:
+            template_name: Template name
+            instance_name: Instance name
+
+        Returns:
+            List of performance event dictionaries
+        """
+        if template_name not in self._executors:
+            raise ValueError(f"Template '{template_name}' not found")
+
+        executor = self._executors[template_name]
+        full_instance_name = f"{template_name}.{instance_name}"
+        return executor.score_get(full_instance_name)
+
+    # Template Validation and Introspection
+
+    def get_template_variables(self, template_name: str) -> set[str]:
+        """Get template variables for a specific template.
+
+        Args:
+            template_name: Template name
+
+        Returns:
+            Set of template variable names
+        """
+        executor = self._get_executor(template_name)
+        return executor.get_template_variables()
+
+    def validate_template_args(
+        self, template_name: str, template_args: dict[str, Any]
+    ) -> tuple[bool, set[str]]:
+        """Validate template arguments for a specific template.
+
+        Args:
+            template_name: Template name
+            template_args: Arguments to validate
+
+        Returns:
+            Tuple of (is_valid, missing_variables)
+        """
+        executor = self._get_executor(template_name)
+        return executor.validate_template_args(template_args)
+
+    def preview_template(
+        self, template_name: str, template_args: dict[str, Any]
+    ) -> str:
+        """Preview the populated DSL for a template without activating it.
+
+        Args:
+            template_name: Template name
+            template_args: Template arguments
+
+        Returns:
+            Populated DSL text
+        """
+        executor = self._get_executor(template_name)
+        return executor.populate_template(template_args)
+
+    # Internal Helper Methods
+
+    def _get_executor(self, template_name: str) -> IfThenRuntimeTemplateExecutor:
+        """Get executor for template, raising clear error if not found."""
+        if template_name not in self._executors:
+            raise ValueError(
+                f"Template '{template_name}' not found. You must explicitly create it first using from_builtin(), from_file(), or from_string()."
+            )
+        return self._executors[template_name]
+
+    # Utility Methods
+
+    def clear_template_cache(self) -> None:
+        """Clear the global template compilation cache."""
+        _template_cache.clear()
+
+    def remove_template(self, template_name: str) -> bool:
+        """Remove a template from the manager (deactivates all instances first).
+
+        Args:
+            template_name: Template name to remove
+
+        Returns:
+            True if template was found and removed
+
+        Note:
+            Builtin templates can be removed but will be auto-recreated on next access
+        """
+        if template_name not in self._executors:
+            return False
+
+        # Deactivate all instances first
+        self.deactivate_template(template_name)
+
+        # Remove from storage
+        del self._executors[template_name]
+        return True

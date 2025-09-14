@@ -5,6 +5,7 @@ import pytest
 from tradeapis.ifthen import IfThenRuntime
 from tradeapis.ifthen_templates import (
     BUILTIN_TEMPLATES,
+    IfThenMultiTemplateManager,
     IfThenRuntimeTemplateExecutor,
     _template_cache,
     create_template_args_for_algo_flipper,
@@ -876,3 +877,717 @@ if __name__ == "__main__":
     print(f"Current {summary.streak_type} streak: {summary.current_streak}")
 
     print("\n=== Demo Complete ===")
+
+
+# ==================== MULTI-TEMPLATE MANAGER TESTS ====================
+
+
+def setup_manager_with_algo_flipper(runtime):
+    """Helper to create manager with algo_flipper template for tests."""
+    manager = IfThenMultiTemplateManager(runtime)
+    manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+    return manager
+
+
+def test_multi_template_manager_basic():
+    """Test basic IfThenMultiTemplateManager functionality."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Test explicit creation of builtin templates
+    executor = manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+    assert isinstance(executor, IfThenRuntimeTemplateExecutor)
+    assert executor.template_source_id == "builtin:algo_flipper.dsl"
+
+    # Test that calling from_builtin again returns the same instance
+    executor_again = manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+    assert executor is executor_again
+
+    # Test dictionary access after explicit creation
+    executor2 = manager["algo_flipper"]
+    assert executor is executor2
+
+    # Test __contains__ after explicit creation
+    assert "algo_flipper" in manager
+    assert "nonexistent_template" not in manager
+
+    # Test accessing non-existent template fails
+    with pytest.raises(ValueError, match="not found. You must explicitly create"):
+        manager["simple_flipper"]
+
+
+def test_multi_template_manager_from_file_and_string():
+    """Test creating templates from file and string sources."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Test from_string
+    custom_template = """
+    entry = "if {{symbol}} price > {{threshold}}: buy {{symbol}} {{qty}} MKT"
+    exit = "if {{symbol}} price < {{exit_threshold}}: sell {{symbol}} {{qty}} MKT"
+
+    flow trading:
+        entry -> exit -> @
+
+    start: trading
+    """
+
+    executor = manager.from_string(custom_template, "custom_breakout")
+    assert "custom_breakout" in manager.get_template_names()
+    assert executor.template_source_id.startswith("string:")
+
+    expected_vars = {"symbol", "threshold", "qty", "exit_threshold"}
+    assert executor.get_template_variables() == expected_vars
+
+    # Test that calling from_string again with same content returns existing instance
+    executor_again = manager.from_string(custom_template, "custom_breakout")
+    assert executor is executor_again  # Should return existing, not create new
+
+    # Test that calling from_string with different content but same name raises error
+    with pytest.raises(
+        ValueError, match="Template name 'custom_breakout' already exists"
+    ):
+        manager.from_string("different content", "custom_breakout")
+
+
+def test_multi_template_manager_template_info():
+    """Test template information and introspection methods."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Add a custom template
+    manager.from_string(
+        'test_template = "if {{symbol}} price > {{threshold}}: say {{message}}"',
+        "test_template",
+    )
+
+    # Test get_template_names
+    names = manager.get_template_names()
+    assert "test_template" in names
+
+    # Test get_available_builtin_names
+    builtin_names = manager.get_available_builtin_names()
+    assert "algo_flipper" in builtin_names
+    assert "simple_flipper" in builtin_names
+    assert "breakout_monitor" in builtin_names
+
+    # Test get_template_info
+    info = manager.get_template_info("test_template")
+    assert info is not None
+    assert info["template_name"] == "test_template"
+    assert info["source_id"].startswith("string:")
+    expected_test_vars = {"symbol", "threshold", "message"}
+    assert set(info["template_variables"]) == expected_test_vars
+    assert info["active_count"] == 0
+
+    # Test non-existent template
+    assert manager.get_template_info("nonexistent") is None
+
+
+def test_multi_template_manager_activation():
+    """Test template activation with hierarchical naming."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # First explicitly create the template
+    manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+
+    # Create template args
+    args = create_template_args_for_algo_flipper(
+        algo_symbol="MNQ",
+        watch_symbol="/NQM5",
+        trade_symbol="/MNQ",
+        evict_symbol="MNQ",
+        timeframe=35,
+        algo="test-algo",
+        qty=1,
+    )
+
+    # Test activation
+    created_count, start_ids, all_ids = manager.activate(
+        "algo_flipper", "mnq_fast", args
+    )
+    assert created_count > 0
+    assert len(start_ids) > 0
+    assert len(all_ids) > 0
+
+    # Test listing active instances
+    active = manager.list_all_active()
+    assert "algo_flipper.mnq_fast" in active
+
+    # Test listing for specific template
+    template_active = manager.list_active_for_template("algo_flipper")
+    assert "algo_flipper.mnq_fast" in template_active
+
+    # Test activation of second instance
+    args2 = create_template_args_for_algo_flipper(
+        algo_symbol="ES",
+        watch_symbol="/ESZ4",
+        trade_symbol="/ES",
+        evict_symbol="ES",
+        timeframe=60,
+        algo="test-algo",
+        qty=2,
+    )
+
+    manager.activate("algo_flipper", "es_slow", args2)
+
+    # Should now have two active instances
+    active = manager.list_all_active()
+    assert len(active) == 2
+    assert "algo_flipper.mnq_fast" in active
+    assert "algo_flipper.es_slow" in active
+
+
+def test_multi_template_manager_deactivation():
+    """Test various deactivation methods."""
+    runtime = IfThenRuntime()
+    manager = setup_manager_with_algo_flipper(runtime)
+
+    # Activate some test instances
+    test_dsl = """
+    test_pred = "if AAPL price > 100: say TEST"
+    start: test_pred
+    """
+
+    manager["algo_flipper"].activate("algo_flipper.test1", test_dsl)
+    manager["algo_flipper"].activate("algo_flipper.test2", test_dsl)
+    manager.from_string(
+        'simple = "if {{symbol}} price > {{threshold}}: say {{message}}"', "simple"
+    )
+    manager["simple"].activate(
+        "simple.test3", 'simple = "if AAPL price > 100: say HELLO"\nstart: simple'
+    )
+
+    # Should have 3 active instances
+    assert len(manager.list_all_active()) == 3
+
+    # Test deactivating specific instance
+    result = manager.deactivate("algo_flipper", "test1")
+    assert result is True
+    assert len(manager.list_all_active()) == 2
+    assert "algo_flipper.test1" not in manager.list_all_active()
+
+    # Test deactivating non-existent instance
+    result = manager.deactivate("algo_flipper", "nonexistent")
+    assert result is False
+
+    # Test deactivating all instances of a template
+    deactivated_count = manager.deactivate_template("algo_flipper")
+    assert deactivated_count == 1  # test2 was deactivated
+    assert len(manager.list_all_active()) == 1
+    assert "simple.test3" in manager.list_all_active()
+
+    # Test deactivating all instances across all templates
+    total_deactivated = manager.deactivate_all()
+    assert total_deactivated == 1  # test3 was deactivated
+    assert len(manager.list_all_active()) == 0
+
+
+def test_multi_template_manager_performance_tracking():
+    """Test performance tracking through the multi-template manager."""
+    runtime = IfThenRuntime()
+    manager = setup_manager_with_algo_flipper(runtime)
+
+    # Activate some instances
+    args = create_template_args_for_algo_flipper(
+        algo_symbol="MNQ",
+        watch_symbol="/NQM5",
+        trade_symbol="/MNQ",
+        evict_symbol="MNQ",
+        timeframe=35,
+        algo="test-algo",
+        qty=1,
+    )
+
+    manager.activate("algo_flipper", "perf_test1", args)
+    manager.activate("algo_flipper", "perf_test2", args)
+
+    # Record performance events
+    manager.state_update("algo_flipper", "perf_test1", {"profit": 100.0, "win": True})
+    manager.state_update("algo_flipper", "perf_test1", {"profit": -50.0, "win": False})
+    manager.state_update("algo_flipper", "perf_test2", {"profit": 200.0, "win": True})
+
+    # Test individual performance summaries
+    summary1 = manager.get_performance_summary("algo_flipper", "perf_test1")
+    assert summary1.total_events == 2
+    assert summary1.total_profit == 50.0
+    assert summary1.win_count == 1
+    assert summary1.loss_count == 1
+
+    summary2 = manager.get_performance_summary("algo_flipper", "perf_test2")
+    assert summary2.total_events == 1
+    assert summary2.total_profit == 200.0
+    assert summary2.win_count == 1
+    assert summary2.loss_count == 0
+
+    # Test get_all_performance_summaries
+    all_summaries = manager.get_all_performance_summaries()
+    assert len(all_summaries) == 2
+    assert "algo_flipper.perf_test1" in all_summaries
+    assert "algo_flipper.perf_test2" in all_summaries
+    assert all_summaries["algo_flipper.perf_test1"].total_profit == 50.0
+    assert all_summaries["algo_flipper.perf_test2"].total_profit == 200.0
+
+    # Test performance events
+    events1 = manager.get_performance_events("algo_flipper", "perf_test1")
+    assert len(events1) == 2
+    assert events1[0]["profit"] == 100.0
+    assert events1[1]["profit"] == -50.0
+
+
+def test_multi_template_manager_template_validation():
+    """Test template validation methods."""
+    runtime = IfThenRuntime()
+    manager = setup_manager_with_algo_flipper(runtime)
+
+    # Test get_template_variables
+    vars = manager.get_template_variables("algo_flipper")
+    expected_vars = {
+        "algo_symbol",
+        "watch_symbol",
+        "trade_symbol",
+        "evict_symbol",
+        "timeframe",
+        "algo",
+        "qty",
+        "offset",
+        "profit_pts",
+        "loss_pts",
+    }
+    assert vars == expected_vars
+
+    # Test validate_template_args
+    incomplete_args = {"algo_symbol": "MNQ", "timeframe": 35}
+    is_valid, missing = manager.validate_template_args("algo_flipper", incomplete_args)
+    assert not is_valid
+    assert len(missing) > 0
+
+    complete_args = create_template_args_for_algo_flipper(
+        algo_symbol="MNQ",
+        watch_symbol="/NQM5",
+        trade_symbol="/MNQ",
+        evict_symbol="MNQ",
+        timeframe=35,
+        algo="test",
+        qty=1,
+    )
+    is_valid, missing = manager.validate_template_args("algo_flipper", complete_args)
+    assert is_valid
+    assert len(missing) == 0
+
+    # Test preview_template
+    preview_dsl = manager.preview_template("algo_flipper", complete_args)
+    assert "MNQ.35.algos.test.stopped" in preview_dsl
+    assert "buy /MNQ" in preview_dsl
+
+
+def test_multi_template_manager_active_summary():
+    """Test getting active summary across all templates."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Add custom template and activate instances
+    manager.from_string(
+        'test = "if {{symbol}} price > {{threshold}}: say {{message}}"', "custom"
+    )
+
+    test_dsl = 'test = "if AAPL price > 100: say HELLO"\nstart: test'
+    manager["custom"].activate("custom.instance1", test_dsl)
+    manager["custom"].activate("custom.instance2", test_dsl)
+
+    # Get active summary
+    summary = manager.get_active_summary()
+    assert len(summary) == 2
+    assert "custom.instance1" in summary
+    assert "custom.instance2" in summary
+
+    # Each summary should contain expected fields
+    for instance_name, info in summary.items():
+        assert "activated_at" in info
+        assert "created_count" in info
+        assert "predicate_count" in info
+        assert "start_predicate_count" in info
+
+
+def test_multi_template_manager_utility_methods():
+    """Test utility methods of multi-template manager."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Add and activate a template
+    manager.from_string(
+        'test = "if {{symbol}} price > {{threshold}}: say {{message}}"', "temp_test"
+    )
+    test_dsl = 'test = "if AAPL price > 100: say HELLO"\nstart: test'
+    manager["temp_test"].activate("temp_test.instance1", test_dsl)
+
+    assert len(manager.list_all_active()) == 1
+
+    # Test remove_template
+    removed = manager.remove_template("temp_test")
+    assert removed is True
+    assert len(manager.list_all_active()) == 0  # Should be deactivated first
+    assert "temp_test" not in manager.get_template_names()
+
+    # Test removing non-existent template
+    removed = manager.remove_template("nonexistent")
+    assert removed is False
+
+    # Test clear_template_cache
+    manager.clear_template_cache()  # Should not crash
+
+
+def test_multi_template_manager_multiple_templates():
+    """Test managing multiple different templates simultaneously."""
+    runtime = IfThenRuntime()
+    manager = setup_manager_with_algo_flipper(runtime)
+
+    # Create instances from different templates
+    args = create_template_args_for_algo_flipper(
+        algo_symbol="MNQ",
+        watch_symbol="/NQM5",
+        trade_symbol="/MNQ",
+        evict_symbol="MNQ",
+        timeframe=35,
+        algo="test",
+        qty=1,
+    )
+
+    manager.activate("algo_flipper", "mnq_instance", args)
+
+    # Add breakout monitor - explicitly create first
+    manager.from_builtin("breakout_monitor.dsl", "breakout_monitor")
+    breakout_args = {
+        "symbol": "SPY",
+        "high_level": "450",
+        "low_level": "440",
+        "timeframe": "60",
+        "qty": "10",
+    }
+    manager.activate("breakout_monitor", "spy_breakout", breakout_args)
+
+    # Add simple flipper - explicitly create first
+    manager.from_builtin("simple_flipper.dsl", "simple_flipper")
+    simple_args = {
+        "symbol": "AAPL",
+        "buy_condition": "AAPL price < 150",
+        "sell_condition": "AAPL price > 160",
+        "qty": 100,
+        "action_buy": "buy AAPL 100 MKT",
+        "action_sell": "sell AAPL 100 MKT",
+    }
+    manager.activate("simple_flipper", "aapl_flip", simple_args)
+
+    # Should have 3 active instances from 3 different templates
+    active = manager.list_all_active()
+    assert len(active) == 3
+    assert "algo_flipper.mnq_instance" in active
+    assert "breakout_monitor.spy_breakout" in active
+    assert "simple_flipper.aapl_flip" in active
+
+    # Test template-specific listings
+    assert len(manager.list_active_for_template("algo_flipper")) == 1
+    assert len(manager.list_active_for_template("breakout_monitor")) == 1
+    assert len(manager.list_active_for_template("simple_flipper")) == 1
+    assert len(manager.list_active_for_template("nonexistent")) == 0
+
+    # Test performance tracking across different templates
+    manager.state_update("algo_flipper", "mnq_instance", {"profit": 100.0, "win": True})
+    manager.state_update("simple_flipper", "aapl_flip", {"profit": -25.0, "win": False})
+
+    summaries = manager.get_all_performance_summaries()
+    # get_all_performance_summaries returns summaries for all active instances
+    assert len(summaries) == 3
+    assert "algo_flipper.mnq_instance" in summaries
+    assert "simple_flipper.aapl_flip" in summaries
+    assert "breakout_monitor.spy_breakout" in summaries
+
+    # Only two have performance data
+    performance_with_data = [s for s in summaries.values() if s.total_events > 0]
+    assert len(performance_with_data) == 2
+
+    # Test deactivating one template doesn't affect others
+    manager.deactivate_template("algo_flipper")
+    active_after = manager.list_all_active()
+    assert len(active_after) == 2
+    assert "breakout_monitor.spy_breakout" in active_after
+    assert "simple_flipper.aapl_flip" in active_after
+
+
+def test_multi_template_manager_error_handling():
+    """Test error handling in multi-template manager."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Test accessing non-existent builtin template
+    with pytest.raises(ValueError, match="Template 'nonexistent' not found"):
+        manager["nonexistent"]
+
+    # Test performance tracking on non-existent template
+    with pytest.raises(ValueError, match="Template 'nonexistent' not found"):
+        manager.state_update("nonexistent", "instance", {"profit": 100.0, "win": True})
+
+    with pytest.raises(ValueError, match="Template 'nonexistent' not found"):
+        manager.get_performance_summary("nonexistent", "instance")
+
+    with pytest.raises(ValueError, match="Template 'nonexistent' not found"):
+        manager.get_performance_events("nonexistent", "instance")
+
+
+def test_multi_template_manager_integration_example():
+    """Test a complete integration example with the multi-template manager."""
+    runtime = IfThenRuntime()
+    manager = setup_manager_with_algo_flipper(runtime)
+
+    # Create multiple algorithm instances
+    algorithms = [
+        (
+            "algo_flipper",
+            "mnq_fast",
+            create_template_args_for_algo_flipper(
+                "MNQ", "/NQM5", "/MNQ", "MNQ", 15, "ema-cross-fast", 1
+            ),
+        ),
+        (
+            "algo_flipper",
+            "mnq_slow",
+            create_template_args_for_algo_flipper(
+                "MNQ", "/NQM5", "/MNQ", "MNQ", 60, "ema-cross-slow", 1
+            ),
+        ),
+        (
+            "algo_flipper",
+            "es_hedge",
+            create_template_args_for_algo_flipper(
+                "ES", "/ESZ4", "/ES", "ES", 300, "mean-revert", 2
+            ),
+        ),
+    ]
+
+    # Activate all algorithms
+    for template_name, instance_name, args in algorithms:
+        manager.activate(template_name, instance_name, args)
+
+    # Verify all are active
+    active_instances = manager.list_all_active()
+    assert len(active_instances) == 3
+    expected_instances = [f"{t}.{i}" for t, i, _ in algorithms]
+    for expected in expected_instances:
+        assert expected in active_instances
+
+    # Simulate trading performance
+    performance_data = [
+        (
+            "algo_flipper",
+            "mnq_fast",
+            {"profit": 150.0, "win": True, "metadata": {"timeframe": 15}},
+        ),
+        ("algo_flipper", "mnq_fast", {"profit": -25.0, "win": False}),
+        (
+            "algo_flipper",
+            "mnq_slow",
+            {"profit": 300.0, "win": True, "metadata": {"timeframe": 60}},
+        ),
+        ("algo_flipper", "es_hedge", {"profit": -75.0, "win": False}),
+        ("algo_flipper", "mnq_fast", {"profit": 200.0, "win": True}),
+    ]
+
+    for template_name, instance_name, event_data in performance_data:
+        manager.state_update(template_name, instance_name, event_data)
+
+    # Analyze performance
+    all_summaries = manager.get_all_performance_summaries()
+
+    # mnq_fast should have 3 events (2 wins, 1 loss)
+    mnq_fast_summary = all_summaries["algo_flipper.mnq_fast"]
+    assert mnq_fast_summary.total_events == 3
+    assert mnq_fast_summary.win_count == 2
+    assert mnq_fast_summary.loss_count == 1
+    assert mnq_fast_summary.total_profit == 325.0  # 150 - 25 + 200
+    assert mnq_fast_summary.current_streak == 1  # Last event was a win
+    assert mnq_fast_summary.streak_type == "win"
+
+    # mnq_slow should have 1 win
+    mnq_slow_summary = all_summaries["algo_flipper.mnq_slow"]
+    assert mnq_slow_summary.total_events == 1
+    assert mnq_slow_summary.win_count == 1
+    assert mnq_slow_summary.total_profit == 300.0
+
+    # es_hedge should have 1 loss
+    es_hedge_summary = all_summaries["algo_flipper.es_hedge"]
+    assert es_hedge_summary.total_events == 1
+    assert es_hedge_summary.loss_count == 1
+    assert es_hedge_summary.total_profit == -75.0
+
+    # Performance-based decision making
+    underperformers = []
+    for instance_name, summary in all_summaries.items():
+        if summary.total_events >= 1:  # Have enough data
+            if summary.win_rate < 0.5 or summary.total_profit < -50:
+                underperformers.append(instance_name)
+
+    # Should identify es_hedge as underperformer
+    assert "algo_flipper.es_hedge" in underperformers
+
+    # Deactivate underperformers
+    for instance_name in underperformers:
+        template_name, instance = instance_name.split(".", 1)
+        manager.deactivate(template_name, instance)
+
+    # Should have 2 active instances remaining
+    remaining_active = manager.list_all_active()
+    assert len(remaining_active) == 2
+    assert "algo_flipper.mnq_fast" in remaining_active
+    assert "algo_flipper.mnq_slow" in remaining_active
+    assert "algo_flipper.es_hedge" not in remaining_active
+
+    # Performance data should still be available for deactivated algorithms
+    events = manager.get_performance_events("algo_flipper", "es_hedge")
+    assert len(events) == 1
+    assert events[0]["profit"] == -75.0
+
+
+def test_multi_template_manager_source_conflict_validation():
+    """Test that template names check for exact source matches and raise conflicts appropriately."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Test from_builtin source conflict validation
+    executor1 = manager.from_builtin("algo_flipper.dsl", "test_template")
+
+    # Calling again with same name and builtin should return the same instance
+    executor2 = manager.from_builtin("algo_flipper.dsl", "test_template")
+    assert executor1 is executor2
+
+    # Calling with same name but different builtin should raise ValueError
+    with pytest.raises(
+        ValueError, match="Template name 'test_template' already exists"
+    ):
+        manager.from_builtin("simple_flipper.dsl", "test_template")
+
+    # Test from_string source conflict validation
+    template_content1 = 'pred1 = "if AAPL price > 100: buy AAPL 1 MKT"'
+    template_content2 = 'pred2 = "if MSFT price > 200: sell MSFT 1 MKT"'
+
+    executor3 = manager.from_string(template_content1, "string_template")
+
+    # Calling again with same name and content should return the same instance
+    executor4 = manager.from_string(template_content1, "string_template")
+    assert executor3 is executor4
+
+    # Calling with same name but different content should raise ValueError
+    with pytest.raises(
+        ValueError, match="Template name 'string_template' already exists"
+    ):
+        manager.from_string(template_content2, "string_template")
+
+
+def test_multi_template_manager_from_file_source_conflict():
+    """Test from_file source conflict validation."""
+    import os
+    import tempfile
+
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Create temporary template files
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".dsl", delete=False) as f1:
+        f1.write(
+            'pred1 = "if {{symbol}} price > {{threshold}}: buy {{symbol}} {{qty}} MKT"'
+        )
+        temp_file1 = f1.name
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".dsl", delete=False) as f2:
+        f2.write(
+            'pred2 = "if {{symbol}} price < {{threshold}}: sell {{symbol}} {{qty}} MKT"'
+        )
+        temp_file2 = f2.name
+
+    try:
+        executor1 = manager.from_file(temp_file1, "file_template")
+
+        # Calling again with same name and file should return the same instance
+        executor2 = manager.from_file(temp_file1, "file_template")
+        assert executor1 is executor2
+
+        # Calling with same name but different file should raise ValueError
+        with pytest.raises(
+            ValueError, match="Template name 'file_template' already exists"
+        ):
+            manager.from_file(temp_file2, "file_template")
+
+    finally:
+        # Clean up temporary files
+        os.unlink(temp_file1)
+        os.unlink(temp_file2)
+
+
+def test_multi_template_manager_cross_source_conflicts():
+    """Test that conflicts are detected across different source types (builtin, file, string)."""
+    import os
+    import tempfile
+
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Create a template from builtin
+    manager.from_builtin("algo_flipper.dsl", "mixed_template")
+
+    # Try to create with same name from string - should fail
+    template_content = 'pred = "if AAPL price > 100: buy AAPL 1 MKT"'
+    with pytest.raises(
+        ValueError, match="Template name 'mixed_template' already exists"
+    ):
+        manager.from_string(template_content, "mixed_template")
+
+    # Try to create with same name from file - should fail
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".dsl", delete=False) as f:
+        f.write(
+            'pred = "if {{symbol}} price > {{threshold}}: buy {{symbol}} {{qty}} MKT"'
+        )
+        temp_file = f.name
+
+    try:
+        with pytest.raises(
+            ValueError, match="Template name 'mixed_template' already exists"
+        ):
+            manager.from_file(temp_file, "mixed_template")
+    finally:
+        os.unlink(temp_file)
+
+
+def test_multi_template_manager_exact_source_matching():
+    """Test that exact source matching works correctly for determining when to return existing vs create new."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Test builtin exact matching
+    executor1 = manager.from_builtin("algo_flipper.dsl", "template1")
+    executor2 = manager.from_builtin(
+        "algo_flipper.dsl", "template1"
+    )  # Same builtin, same name
+    assert executor1 is executor2
+
+    # Test string exact matching
+    content = 'pred = "if AAPL price > 100: buy AAPL 1 MKT"'
+    executor3 = manager.from_string(content, "template2")
+    executor4 = manager.from_string(content, "template2")  # Same content, same name
+    assert executor3 is executor4
+
+    # Test file exact matching
+    import os
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".dsl", delete=False) as f:
+        f.write(
+            'pred = "if {{symbol}} price > {{threshold}}: buy {{symbol}} {{qty}} MKT"'
+        )
+        temp_file = f.name
+
+    try:
+        executor5 = manager.from_file(temp_file, "template3")
+        executor6 = manager.from_file(temp_file, "template3")  # Same file, same name
+        assert executor5 is executor6
+    finally:
+        os.unlink(temp_file)
