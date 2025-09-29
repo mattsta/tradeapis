@@ -29,6 +29,16 @@ The module provides two main interfaces:
 - **Summary Statistics**: Win rate, streaks, runtime, profitability
 - **Audit Trail**: Full performance data for algorithm evaluation
 
+### 4. Enhanced Observability & Reporting
+- **Template Preview**: Use `populate_template()` to preview rendered templates without activation
+- **Comprehensive Metadata**: Store raw templates, parameters, and rendered DSL for debugging
+- **System Health Reports**: System-wide health monitoring and performance analytics
+- **Template Validation**: Proactive validation of all templates and instances
+- **Usage Statistics**: Track template utilization and identify underused resources
+- **Configuration Export**: Complete system backup and analysis capabilities
+- **Debug Information**: Detailed debugging data for individual template instances
+- **Type-Safe Reporting**: All reporting methods return well-typed dataclasses for enhanced introspection
+
 ## Quick Start
 
 ### Explicit Template Source Usage
@@ -221,6 +231,109 @@ executor.deactivate("mnq_scalper")
 
 # Emergency shutdown - deactivate everything
 deactivated_count = executor.deactivate_all()
+```
+
+### Enhanced Observability and Reporting
+```python
+from tradeapis.ifthen_templates import IfThenMultiTemplateManager
+
+# Create manager and set up templates
+manager = IfThenMultiTemplateManager(runtime)
+manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+manager.from_builtin("breakout_monitor.dsl", "breakout_monitor")
+
+# Create some instances
+args = create_template_args_for_algo_flipper(
+    algo_symbol="MNQ", watch_symbol="/NQM5", trade_symbol="/MNQ",
+    evict_symbol="MNQ", timeframe=35, algo="test", qty=1
+)
+manager.activate("algo_flipper", "mnq_fast", args)
+
+# 1. Template Preview - Test templates without activation
+preview_dsl = manager["algo_flipper"].populate_template(args)
+print("Generated DSL preview:")
+print(preview_dsl[:200] + "...")
+
+# 2. Comprehensive Metadata - Get complete instance information
+metadata = manager.get_template_instance_metadata("algo_flipper", "mnq_fast")
+if metadata:
+    print(f"Template: {metadata.template_source_id}")
+    print(f"Parameters: {metadata.template_parameters}")
+    print(f"Rendered DSL length: {len(metadata.rendered_dsl)}")
+    print(f"Performance: {metadata.performance_summary.total_profit if metadata.performance_summary else 'No data'}")
+
+# 3. System Health Report - Monitor overall system status
+health = manager.get_system_health_report()
+print(f"System Health:")
+print(f"  Total templates: {health.total_templates}")
+print(f"  Active instances: {health.total_active_instances}")
+print(f"  System profit: {health.total_system_profit}")
+print(f"  Top performers: {health.top_performers[:3]}")
+
+# 4. Template Validation - Check for issues
+validation = manager.validate_all_templates()
+for template_name, result in validation.items():
+    print(f"{template_name}: {result.status}")
+    if result.errors:
+        print(f"  Errors: {result.errors}")
+    if result.warnings:
+        print(f"  Warnings: {result.warnings}")
+
+# 5. Usage Statistics - Track template utilization
+stats = manager.get_template_usage_statistics()
+print(f"Usage Statistics:")
+print(f"  Most used: {stats.most_used_template}")
+print(f"  Average instances per template: {stats.avg_instances_per_template:.1f}")
+print(f"  Unused templates: {stats.unused_templates}")
+
+# 6. Performance Analytics - Data-driven insights
+analytics = manager.get_performance_analytics()
+print(f"Performance Analytics:")
+print(f"  System win rate: {analytics.system_metrics.system_win_rate:.1%}")
+print(f"  Best instance: {analytics.best_instance.instance_name if analytics.best_instance else 'None'}")
+print(f"  Best template: {analytics.best_template[0] if analytics.best_template else 'None'}")
+
+# 7. Configuration Export - Backup and analysis
+export = manager.export_template_configurations(include_performance=True)
+print(f"Export contains {len(export.templates)} templates and {len(export.instances)} instances")
+# Save to file: json.dump(export, open('backup.json', 'w'), indent=2, default=str)
+
+# 8. Debug Information - Detailed troubleshooting
+debug_info = manager.get_template_debug_info("algo_flipper", "mnq_fast")
+if debug_info:
+    print(f"Debug Info:")
+    print(f"  Runtime: {debug_info.runtime_seconds:.1f} seconds")
+    print(f"  Predicates: {debug_info.predicate_count}")
+    print(f"  Performance events: {debug_info.performance_events_count}")
+    print(f"  Validation status: {debug_info.validation_status}")
+```
+
+### Single-Template Observability
+```python
+# For individual template executors
+executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
+
+# Preview template without activation
+args = create_template_args_for_algo_flipper(
+    algo_symbol="ES", watch_symbol="/ESZ4", trade_symbol="/ES",
+    evict_symbol="ES", timeframe=60, algo="momentum", qty=2
+)
+preview = executor.populate_template(args)
+
+# Get comprehensive metadata for active instances
+executor.create_and_activate("es_momentum", args)
+metadata = executor.get_comprehensive_metadata("es_momentum")
+print(f"Instance metadata: {metadata.instance_name}")
+print(f"Template variables: {metadata.template_variables}")
+
+# Get debug information
+debug_info = executor.get_template_debug_info("es_momentum")
+print(f"Debug: {debug_info.template_source_id}, {debug_info.predicate_count} predicates")
+
+# Get all active metadata at once
+all_metadata = executor.get_all_active_metadata()
+for name, meta in all_metadata.items():
+    print(f"{name}: {meta.template_source_id}")
 ```
 
 ## Advanced Usage
@@ -471,6 +584,81 @@ The streak tracks consecutive wins or losses from the most recent event backward
 - Positive streak: consecutive wins (e.g., current_streak=5, streak_type="win")
 - Negative streak: consecutive losses (e.g., current_streak=3, streak_type="loss")
 
+## Enhanced Observability Benefits
+
+The observability and reporting features provide critical capabilities for production trading systems:
+
+### **Why Use These Features?**
+
+#### **1. Template Preview (via populate_template)**
+- **Safe Testing**: Test template changes without affecting live trading
+- **Development Workflow**: Iterate on templates before deployment
+- **Validation**: Verify template logic before activation
+- **Documentation**: Generate examples for team members
+
+#### **2. Comprehensive Metadata Storage**
+- **Debugging**: Full context for troubleshooting issues
+- **Audit Trail**: Complete record of what was running and when
+- **Reproducibility**: Recreate exact configurations for testing
+- **Compliance**: Maintain records for regulatory requirements
+
+#### **3. System Health Monitoring**
+- **Operational Awareness**: Real-time view of system status
+- **Performance Tracking**: Monitor overall system profitability
+- **Resource Management**: Identify over/under-utilized templates
+- **Alerting**: Set up monitoring for system health metrics
+
+#### **4. Template Validation**
+- **Proactive Issue Detection**: Find problems before they impact trading
+- **Configuration Verification**: Ensure all templates are properly configured
+- **Maintenance**: Identify templates that need attention
+- **Quality Assurance**: Validate system integrity
+
+#### **5. Usage Statistics**
+- **Resource Optimization**: Identify unused templates for cleanup
+- **Capacity Planning**: Understand template utilization patterns
+- **Cost Analysis**: Track which templates provide the most value
+- **Strategic Decisions**: Data-driven template management
+
+#### **6. Performance Analytics**
+- **Data-Driven Decisions**: Use metrics to guide trading strategy
+- **Performance Attribution**: Understand which templates perform best
+- **Risk Management**: Identify underperforming strategies
+- **Optimization**: Focus resources on high-performing templates
+
+#### **7. Configuration Export**
+- **Backup & Recovery**: Complete system state backup
+- **Environment Migration**: Move configurations between systems
+- **Analysis**: Export data for external analysis tools
+- **Documentation**: Generate system configuration reports
+
+#### **8. Debug Information**
+- **Troubleshooting**: Detailed information for issue resolution
+- **Performance Analysis**: Understand system behavior
+- **Monitoring**: Track system metrics over time
+- **Support**: Provide detailed information to support teams
+
+### **Type Safety Benefits**
+
+All reporting methods return well-typed dataclasses instead of generic dictionaries:
+
+```python
+# Before: dict[str, Any] - no type safety
+health = manager.get_system_health_report()
+total = health["total_templates"]  # Could fail at runtime
+
+# After: SystemHealthReport - full type safety
+health = manager.get_system_health_report()
+total = health.total_templates  # IDE autocomplete, type checking
+```
+
+**Benefits:**
+- **IDE Support**: Full autocomplete and type hints
+- **Runtime Safety**: Catch type errors during development
+- **Documentation**: Self-documenting code with explicit field names
+- **Refactoring**: Safe refactoring with type checker support
+- **Debugging**: Easy inspection of data structures
+
 ## Built-in Templates
 
 ### algo_flipper.dsl
@@ -509,7 +697,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import jinja2
 from jinja2 import BaseLoader, Environment, Template, meta
@@ -537,6 +725,10 @@ class ActiveTemplate:
     start_ids: set[PredicateId]
     all_ids: set[PredicateId]
     activated_at: datetime
+    # Enhanced metadata for observability
+    raw_template: str | None = None
+    template_parameters: dict[str, Any] | None = None
+    template_source_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -565,6 +757,204 @@ class PerformanceSummary:
     first_event: datetime | None
     last_event: datetime | None
     avg_profit_per_trade: float
+
+
+@dataclass(slots=True)
+class TemplateMetadata:
+    """Comprehensive metadata for a template instance including raw template, parameters, and rendered output."""
+
+    instance_name: str
+    template_source_id: str
+    raw_template: str
+    template_parameters: dict[str, Any]
+    rendered_dsl: str
+    activated_at: datetime
+    created_count: int
+    predicate_count: int
+    start_predicate_count: int
+    # Performance data if available
+    performance_summary: PerformanceSummary | None = None
+    # Additional metadata for debugging
+    template_variables: set[str] | None = None
+    validation_status: str | None = None  # "valid", "invalid", "partial"
+    last_checked: datetime | None = None
+
+
+@dataclass(slots=True)
+class SystemHealthReport:
+    """Comprehensive system health report for all templates and instances."""
+
+    total_templates: int
+    total_active_instances: int
+    templates_with_instances: int
+    instances_with_performance: int
+    total_system_profit: float
+    total_system_events: int
+    top_performers: list[tuple[str, float]]  # (instance_name, profit)
+    template_names: list[str]
+    active_instance_names: list[str]
+    report_generated_at: str  # ISO format datetime
+
+
+@dataclass(slots=True)
+class TemplateValidationResult:
+    """Validation result for a single template."""
+
+    status: str  # "valid", "error"
+    template_variables: list[str]
+    active_instances: int
+    source_id: str
+    errors: list[str]
+    warnings: list[str]
+
+
+@dataclass(slots=True)
+class TemplateUsageStatistics:
+    """Usage statistics for all templates."""
+
+    total_instances: int
+    total_templates: int
+    template_usage_counts: dict[str, int]
+    most_used_template: tuple[str, int] | None  # (template_name, count)
+    least_used_template: tuple[str, int] | None  # (template_name, count)
+    avg_instances_per_template: float
+    unused_templates: list[str]
+
+
+@dataclass(slots=True)
+class SystemInfo:
+    """System information for export data."""
+
+    total_templates: int
+    total_active_instances: int
+
+
+@dataclass(slots=True)
+class TemplateDefinition:
+    """Template definition for export data."""
+
+    source_id: str
+    template_variables: list[str]
+    raw_template: str
+
+
+@dataclass(slots=True)
+class ExportPerformanceData:
+    """Performance data for an instance in export."""
+
+    total_events: int
+    total_profit: float
+    win_rate: float
+    current_streak: int
+    streak_type: str
+
+
+@dataclass(slots=True)
+class InstanceConfiguration:
+    """Instance configuration for export data."""
+
+    template_name: str
+    template_parameters: dict[str, Any]
+    rendered_dsl: str
+    activated_at: str  # ISO format datetime
+    predicate_count: int
+    start_predicate_count: int
+    performance: ExportPerformanceData | None = None
+
+
+@dataclass(slots=True)
+class TemplateConfigurationExport:
+    """Complete template configuration export."""
+
+    export_timestamp: str  # ISO format datetime
+    system_info: SystemInfo
+    templates: dict[str, TemplateDefinition]
+    instances: dict[str, InstanceConfiguration]
+
+
+@dataclass(slots=True)
+class SystemMetrics:
+    """System-wide performance metrics."""
+
+    total_profit: float
+    total_events: int
+    total_wins: int
+    system_win_rate: float
+    active_instances_with_data: int
+
+
+@dataclass(slots=True)
+class InstancePerformanceData:
+    """Performance data for analytics."""
+
+    instance_name: str
+    template_name: str
+    total_profit: float
+    win_rate: float
+    total_events: int
+    current_streak: int
+
+
+@dataclass(slots=True)
+class TemplatePerformanceAggregate:
+    """Aggregated performance data for a template."""
+
+    total_profit: float
+    total_events: int
+    total_wins: int
+    instances: int
+
+
+@dataclass(slots=True)
+class PerformanceAnalytics:
+    """Comprehensive performance analytics across all templates."""
+
+    system_metrics: SystemMetrics
+    best_instance: InstancePerformanceData | None
+    worst_instance: InstancePerformanceData | None
+    best_template: tuple[str, TemplatePerformanceAggregate] | None
+    template_performance: dict[str, TemplatePerformanceAggregate]
+    all_performance_data: list[InstancePerformanceData]
+
+
+@dataclass(slots=True)
+class TemplateDebugInfo:
+    """Detailed debug information for a template instance."""
+
+    instance_name: str
+    template_source_id: str
+    template_variables: list[str]
+    validation_status: str
+    activated_at: str  # ISO format datetime
+    runtime_seconds: float
+    predicate_count: int
+    start_predicate_count: int
+    performance_events_count: int
+    has_performance_data: bool
+    template_parameters: dict[str, Any]
+    rendered_dsl_length: int
+    raw_template_length: int
+
+
+@dataclass(slots=True)
+class ActiveTemplateSummary:
+    """Summary information for an active template."""
+
+    activated_at: datetime
+    created_count: int
+    predicate_count: int
+    start_predicate_count: int
+
+
+@dataclass(slots=True)
+class TemplateInfo:
+    """Information about a specific template."""
+
+    template_name: str
+    source_id: str
+    template_variables: list[str]
+    active_instances: list[str]
+    active_count: int
 
 
 @dataclass(slots=True)
@@ -870,7 +1260,11 @@ class IfThenRuntimeTemplateExecutor:
             raise jinja2.TemplateError(f"Template rendering failed: {e}")
 
     def activate(
-        self, name: str, dsl_text: str, enable: bool = True
+        self,
+        name: str,
+        dsl_text: str,
+        enable: bool = True,
+        template_parameters: dict[str, Any] | None = None,
     ) -> tuple[int, set[PredicateId], set[PredicateId]]:
         """Activate a pre-rendered DSL template in the runtime with tracking.
 
@@ -878,6 +1272,7 @@ class IfThenRuntimeTemplateExecutor:
             name: Unique name for this template activation (for tracking/management)
             dsl_text: Pre-rendered DSL text ready for DSL loader
             enable: Whether to activate the loaded predicates immediately
+            template_parameters: Optional parameters used to generate this DSL (for metadata)
 
         Returns:
             Tuple of (created_count, start_ids, all_ids) from DSL loader
@@ -893,7 +1288,7 @@ class IfThenRuntimeTemplateExecutor:
             dsl_text, activate=enable
         )
 
-        # Track the activation
+        # Track the activation with enhanced metadata
         self._active_templates[name] = ActiveTemplate(
             name=name,
             dsl_text=dsl_text,
@@ -901,6 +1296,9 @@ class IfThenRuntimeTemplateExecutor:
             start_ids=start_ids,
             all_ids=all_ids,
             activated_at=datetime.now(),
+            raw_template=self._template_content,
+            template_parameters=template_parameters,
+            template_source_id=self.template_source_id,
         )
 
         return created_count, start_ids, all_ids
@@ -957,20 +1355,20 @@ class IfThenRuntimeTemplateExecutor:
 
         return deactivated_count
 
-    def get_active_summary(self) -> dict[str, dict[str, Any]]:
+    def get_active_summary(self) -> dict[str, ActiveTemplateSummary]:
         """Get summary information about all active templates.
 
         Returns:
-            Dictionary mapping template names to summary info
+            Dictionary mapping template names to ActiveTemplateSummary objects
         """
         summary = {}
         for name, active in self._active_templates.items():
-            summary[name] = {
-                "activated_at": active.activated_at,
-                "created_count": active.created_count,
-                "predicate_count": len(active.all_ids),
-                "start_predicate_count": len(active.start_ids),
-            }
+            summary[name] = ActiveTemplateSummary(
+                activated_at=active.activated_at,
+                created_count=active.created_count,
+                predicate_count=len(active.all_ids),
+                start_predicate_count=len(active.start_ids),
+            )
         return summary
 
     def create_and_activate(
@@ -987,7 +1385,9 @@ class IfThenRuntimeTemplateExecutor:
             Tuple of (created_count, start_ids, all_ids) from runtime.load()
         """
         dsl_text = self.populate_template(template_args)
-        return self.activate(name, dsl_text, enable=enable)
+        return self.activate(
+            name, dsl_text, enable=enable, template_parameters=template_args
+        )
 
     # Performance Tracking Methods
 
@@ -1168,27 +1568,145 @@ class IfThenRuntimeTemplateExecutor:
             avg_profit_per_trade=avg_profit_per_trade,
         )
 
+    # Enhanced Observability and Management Methods
+
+
+    def get_comprehensive_metadata(self, name: str) -> TemplateMetadata | None:
+        """Get comprehensive metadata for an active template instance.
+
+        Args:
+            name: Name of the active template instance
+
+        Returns:
+            TemplateMetadata object with all available information, or None if not found
+
+        Example:
+            metadata = executor.get_comprehensive_metadata("my_algo")
+            if metadata:
+                print(f"Template: {metadata.template_source_id}")
+                print(f"Parameters: {metadata.template_parameters}")
+                print(f"Rendered DSL length: {len(metadata.rendered_dsl)}")
+        """
+        if name not in self._active_templates:
+            return None
+
+        active_template = self._active_templates[name]
+
+        # Get performance summary if available
+        performance_summary = None
+        if name in self._performance_events and self._performance_events[name]:
+            performance_summary = self.score_summary(name)
+
+        # Validate template parameters
+        validation_status = "valid"
+        if active_template.template_parameters:
+            is_valid, missing = self.validate_template_args(
+                active_template.template_parameters
+            )
+            if not is_valid:
+                validation_status = "invalid" if missing else "partial"
+
+        return TemplateMetadata(
+            instance_name=name,
+            template_source_id=active_template.template_source_id
+            or self.template_source_id,
+            raw_template=active_template.raw_template or self._template_content,
+            template_parameters=active_template.template_parameters or {},
+            rendered_dsl=active_template.dsl_text,
+            activated_at=active_template.activated_at,
+            created_count=active_template.created_count,
+            predicate_count=len(active_template.all_ids),
+            start_predicate_count=len(active_template.start_ids),
+            performance_summary=performance_summary,
+            template_variables=self._template_vars,
+            validation_status=validation_status,
+            last_checked=datetime.now(),
+        )
+
+    def get_all_active_metadata(self) -> dict[str, TemplateMetadata]:
+        """Get comprehensive metadata for all active template instances.
+
+        Returns:
+            Dictionary mapping instance names to TemplateMetadata objects
+
+        Example:
+            all_metadata = executor.get_all_active_metadata()
+            for name, metadata in all_metadata.items():
+                print(f"{name}: {metadata.template_source_id}")
+                print(f"  Parameters: {list(metadata.template_parameters.keys())}")
+                print(f"  Performance: {metadata.performance_summary.total_profit if metadata.performance_summary else 'No data'}")
+        """
+        return {
+            name: self.get_comprehensive_metadata(name) for name in self.list_active()
+        }
+
+    def get_template_debug_info(self, name: str) -> TemplateDebugInfo | None:
+        """Get detailed debug information for a template instance.
+
+        Args:
+            name: Name of the active template instance
+
+        Returns:
+            TemplateDebugInfo object with comprehensive debug information, or None if not found
+
+        Example:
+            debug_info = executor.get_template_debug_info("my_algo")
+            if debug_info:
+                print(f"Template variables: {debug_info.template_variables}")
+                print(f"Validation status: {debug_info.validation_status}")
+                print(f"Performance events: {debug_info.performance_events_count}")
+        """
+        if name not in self._active_templates:
+            return None
+
+        active_template = self._active_templates[name]
+        metadata = self.get_comprehensive_metadata(name)
+
+        return TemplateDebugInfo(
+            instance_name=name,
+            template_source_id=self.template_source_id,
+            template_variables=list(self._template_vars),
+            validation_status=metadata.validation_status if metadata else "unknown",
+            activated_at=active_template.activated_at.isoformat(),
+            runtime_seconds=(
+                datetime.now() - active_template.activated_at
+            ).total_seconds(),
+            predicate_count=len(active_template.all_ids),
+            start_predicate_count=len(active_template.start_ids),
+            performance_events_count=len(self._performance_events.get(name, [])),
+            has_performance_data=name in self._performance_events
+            and bool(self._performance_events[name]),
+            template_parameters=active_template.template_parameters or {},
+            rendered_dsl_length=len(active_template.dsl_text),
+            raw_template_length=len(self._template_content),
+        )
+
 
 # Built-in template definitions using Jinja2 syntax
 BUILTIN_TEMPLATES = {
     ### ALGO FLIPPER
     "algo_flipper.dsl": """# Algo Flipper Template
 # Monitors an algorithm and flips positions when it stops
-# Template variables: watch_symbol, algo_symbol, trade_symbol, evict_symbol, timeframe, algo, qty, offset, profit_pts, loss_pts
+# Template variables: watch_symbol, algo_symbol, trade_symbol, evict_symbol, timeframe, algo, qty, offset, profit_pts, loss_pts, flip_sides
 
+# Build algo datafeed path like: MNQ.35.algos.temathma-5x-12x-vwap
+{% set algo_path = algo_symbol + '.' + timeframe|string + '.algos.' + algo %}
+
+# Build short action trigger
 {% set short_action -%}
-cancel {{ evict_symbol }}*; evict {{ evict_symbol }}* -1 0 MKT; buy {{ trade_symbol }} -{{ qty }} LIM @ {% if offset %}(+ live {{ offset }}){% else %}live{% endif %}{% if profit_pts %} + {{ profit_pts }}{% endif %}{% if loss_pts %} - {{ loss_pts }}{% endif %}
+cancel {{ evict_symbol }}*; evict {{ evict_symbol }}* -1 0 MKT{% if flip_sides == 'short' or flip_sides == 'both' %}; buy {{ trade_symbol }} -{{ qty }} LIM @ {% if offset %}(+ live {{ offset }}){% else %}live{% endif %}{% if profit_pts %} + {{ profit_pts }}{% endif %}{% if loss_pts %} - {{ loss_pts }}{% endif %}{% endif %}
 {%- endset %}
 
+# Build long action trigger
 {% set long_action -%}
-cancel {{ evict_symbol }}*; evict {{ evict_symbol }}* -1 0 MKT; buy {{ trade_symbol }} {{ qty }} LIM @ {% if offset %}(- live {{ offset }}){% else %}live{% endif %}{% if profit_pts %} + {{ profit_pts }}{% endif %}{% if loss_pts %} - {{ loss_pts }}{% endif %}
+cancel {{ evict_symbol }}*; evict {{ evict_symbol }}* -1 0 MKT{% if flip_sides == 'long' or flip_sides == 'both' %}; buy {{ trade_symbol }} {{ qty }} LIM @ {% if offset %}(- live {{ offset }}){% else %}live{% endif %}{% if profit_pts %} + {{ profit_pts }}{% endif %}{% if loss_pts %} - {{ loss_pts }}{% endif %}{% endif %}
 {%- endset %}
 
-check_short = "if {{ watch_symbol }} { {{ algo_symbol }}.{{ timeframe }}.algos.{{ algo }}.stopped is True and ({{ algo_symbol }}.{{ timeframe }}.algos.{{ algo }}.be is 'short') }: {{ short_action }}"
+check_short = "if {{ watch_symbol }} { {{ algo_path }}.stopped is True and ({{ algo_path }}.be is 'short') }: {{ short_action }}"
 
-check_long = "if {{ watch_symbol }} { {{ algo_symbol }}.{{ timeframe }}.algos.{{ algo }}.stopped is True and ({{ algo_symbol }}.{{ timeframe }}.algos.{{ algo }}.be is 'long') }: {{ long_action }}"
+check_long = "if {{ watch_symbol }} { {{ algo_path }}.stopped is True and ({{ algo_path }}.be is 'long') }: {{ long_action }}"
 
-unstopped = "if {{ watch_symbol }} { {{ algo_symbol }}.{{ timeframe }}.algos.{{ algo }}.stopped is False }: say algo reset"
+unstopped = "if {{ watch_symbol }} { {{ algo_path }}.stopped is False }: say algo reset"
 
 flow primary:
     check_short | check_long
@@ -1280,6 +1798,7 @@ def create_template_args_for_algo_flipper(
     offset: float | None = None,
     profit_pts: int | None = None,
     loss_pts: int | None = None,
+    flip_sides: Literal["long", "short", "both"] = "both",
 ) -> dict[str, Any]:
     """Helper function to create properly formatted template arguments for algo flipper.
 
@@ -1294,6 +1813,7 @@ def create_template_args_for_algo_flipper(
         offset: Price offset from live price (None = omit from template)
         profit_pts: Profit target distance in points (None = omit from template)
         loss_pts: Loss limit distance in points (None = omit from template)
+        flip_sides: Which sides to scalp on - 'long', 'short', or 'both' (default: 'both')
 
     Returns:
         Dictionary of template arguments ready for populate_template()
@@ -1309,6 +1829,7 @@ def create_template_args_for_algo_flipper(
         "offset": offset,
         "profit_pts": profit_pts,
         "loss_pts": loss_pts,
+        "flip_sides": flip_sides,
     }
 
 
@@ -1729,11 +2250,11 @@ class IfThenMultiTemplateManager:
 
         return self._executors[template_name].list_active()
 
-    def get_active_summary(self) -> dict[str, dict[str, Any]]:
+    def get_active_summary(self) -> dict[str, ActiveTemplateSummary]:
         """Get summary of all active instances across all templates.
 
         Returns:
-            Dictionary mapping full instance names to summary info
+            Dictionary mapping full instance names to ActiveTemplateSummary objects
         """
         all_summary = {}
         for template_name, executor in self._executors.items():
@@ -1741,26 +2262,26 @@ class IfThenMultiTemplateManager:
             all_summary.update(template_summary)
         return all_summary
 
-    def get_template_info(self, template_name: str) -> dict[str, Any] | None:
+    def get_template_info(self, template_name: str) -> TemplateInfo | None:
         """Get information about a specific template.
 
         Args:
             template_name: Template name to get info for
 
         Returns:
-            Dictionary with template info or None if not found
+            TemplateInfo object with template info or None if not found
         """
         if template_name not in self._executors:
             return None
 
         executor = self._executors[template_name]
-        return {
-            "template_name": template_name,
-            "source_id": executor.template_source_id,
-            "template_variables": list(executor.get_template_variables()),
-            "active_instances": executor.list_active(),
-            "active_count": len(executor.list_active()),
-        }
+        return TemplateInfo(
+            template_name=template_name,
+            source_id=executor.template_source_id,
+            template_variables=list(executor.get_template_variables()),
+            active_instances=executor.list_active(),
+            active_count=len(executor.list_active()),
+        )
 
     # Performance Tracking Methods
 
@@ -1879,6 +2400,396 @@ class IfThenMultiTemplateManager:
         """
         executor = self._get_executor(template_name)
         return executor.populate_template(template_args)
+
+    def get_all_active_templates_comprehensive(self) -> dict[str, TemplateMetadata]:
+        """Get comprehensive metadata for ALL active template instances across ALL templates.
+
+        This is the single comprehensive method for showing all currently active templates
+        with their complete state and properties.
+
+        Returns:
+            Dictionary mapping full instance names (template.instance) to TemplateMetadata objects
+
+        Example:
+            all_active = manager.get_all_active_templates_comprehensive()
+            for instance_name, metadata in all_active.items():
+                print(f"Instance: {instance_name}")
+                print(f"  Template: {metadata.template_source_id}")
+                print(f"  Parameters: {metadata.template_parameters}")
+                print(f"  Performance: {metadata.performance_summary.total_profit if metadata.performance_summary else 'No data'}")
+                print(f"  Runtime: {metadata.activated_at}")
+        """
+        all_metadata = {}
+        for template_name, executor in self._executors.items():
+            executor_metadata = executor.get_all_active_metadata()
+            all_metadata.update(executor_metadata)
+        return all_metadata
+
+    def get_template_instance_metadata(
+        self, template_name: str, instance_name: str
+    ) -> TemplateMetadata | None:
+        """Get comprehensive metadata for a specific template instance.
+
+        Args:
+            template_name: Template name
+            instance_name: Instance name
+
+        Returns:
+            TemplateMetadata object or None if not found
+
+        Example:
+            metadata = manager.get_template_instance_metadata("algo_flipper", "mnq_fast")
+            if metadata:
+                print(f"Raw template: {metadata.raw_template[:100]}...")
+                print(f"Rendered DSL: {metadata.rendered_dsl[:100]}...")
+        """
+        if template_name not in self._executors:
+            return None
+
+        executor = self._executors[template_name]
+        full_instance_name = f"{template_name}.{instance_name}"
+        return executor.get_comprehensive_metadata(full_instance_name)
+
+    def get_template_debug_info(
+        self, template_name: str, instance_name: str
+    ) -> TemplateDebugInfo | None:
+        """Get detailed debug information for a specific template instance.
+
+        Args:
+            template_name: Template name
+            instance_name: Instance name
+
+        Returns:
+            TemplateDebugInfo object with comprehensive debug information, or None if not found
+
+        Example:
+            debug_info = manager.get_template_debug_info("algo_flipper", "mnq_fast")
+            if debug_info:
+                print(f"Debug info: {debug_info}")
+        """
+        if template_name not in self._executors:
+            return None
+
+        executor = self._executors[template_name]
+        full_instance_name = f"{template_name}.{instance_name}"
+        return executor.get_template_debug_info(full_instance_name)
+
+    def get_system_health_report(self) -> SystemHealthReport:
+        """Get a comprehensive system health report for all templates and instances.
+
+        Returns:
+            SystemHealthReport object with system-wide health information
+
+        Example:
+            health = manager.get_system_health_report()
+            print(f"Total templates: {health.total_templates}")
+            print(f"Total active instances: {health.total_active_instances}")
+            print(f"Templates with performance data: {health.instances_with_performance}")
+        """
+        all_metadata = self.get_all_active_templates_comprehensive()
+
+        total_templates = len(self._executors)
+        total_active_instances = len(all_metadata)
+
+        # Count instances with performance data
+        instances_with_performance = sum(
+            1
+            for metadata in all_metadata.values()
+            if metadata.performance_summary
+            and metadata.performance_summary.total_events > 0
+        )
+
+        # Count templates with active instances
+        templates_with_instances = len(
+            set(name.split(".", 1)[0] for name in all_metadata.keys())
+        )
+
+        # Calculate total system performance
+        total_profit = sum(
+            metadata.performance_summary.total_profit
+            for metadata in all_metadata.values()
+            if metadata.performance_summary
+        )
+
+        total_events = sum(
+            metadata.performance_summary.total_events
+            for metadata in all_metadata.values()
+            if metadata.performance_summary
+        )
+
+        # Find top performers
+        top_performers = sorted(
+            [
+                (name, metadata.performance_summary.total_profit)
+                for name, metadata in all_metadata.items()
+                if metadata.performance_summary
+                and metadata.performance_summary.total_events > 0
+            ],
+            key=lambda x: x[1],
+            reverse=True,
+        )[:5]
+
+        return SystemHealthReport(
+            total_templates=total_templates,
+            total_active_instances=total_active_instances,
+            templates_with_instances=templates_with_instances,
+            instances_with_performance=instances_with_performance,
+            total_system_profit=total_profit,
+            total_system_events=total_events,
+            top_performers=top_performers,
+            template_names=list(self._executors.keys()),
+            active_instance_names=list(all_metadata.keys()),
+            report_generated_at=datetime.now().isoformat(),
+        )
+
+    def validate_all_templates(self) -> dict[str, TemplateValidationResult]:
+        """Validate all registered templates and return validation results.
+
+        Returns:
+            Dictionary mapping template names to TemplateValidationResult objects
+
+        Example:
+            validation_results = manager.validate_all_templates()
+            for template_name, result in validation_results.items():
+                print(f"{template_name}: {result.status}")
+                if result.errors:
+                    print(f"  Errors: {result.errors}")
+        """
+        results = {}
+        for template_name, executor in self._executors.items():
+            try:
+                # Check if template compiles
+                template_vars = executor.get_template_variables()
+
+                # Try to get template info
+                template_info = self.get_template_info(template_name)
+
+                warnings = []
+
+                # Check for potential issues
+                if not template_vars:
+                    warnings.append("No template variables found")
+
+                if template_info and template_info.active_count == 0:
+                    warnings.append("No active instances")
+
+                results[template_name] = TemplateValidationResult(
+                    status="valid",
+                    template_variables=list(template_vars),
+                    active_instances=len(executor.list_active()),
+                    source_id=executor.template_source_id,
+                    errors=[],
+                    warnings=warnings,
+                )
+
+            except Exception as e:
+                results[template_name] = TemplateValidationResult(
+                    status="error",
+                    template_variables=[],
+                    active_instances=0,
+                    source_id="",
+                    errors=[str(e)],
+                    warnings=[],
+                )
+
+        return results
+
+    def get_template_usage_statistics(self) -> TemplateUsageStatistics:
+        """Get usage statistics for all templates.
+
+        Returns:
+            TemplateUsageStatistics object with usage statistics
+
+        Example:
+            stats = manager.get_template_usage_statistics()
+            print(f"Most used template: {stats.most_used_template}")
+            print(f"Total instances created: {stats.total_instances}")
+        """
+        all_metadata = self.get_all_active_templates_comprehensive()
+
+        # Count instances per template
+        template_usage = {}
+        for instance_name, metadata in all_metadata.items():
+            template_name = instance_name.split(".", 1)[0]
+            template_usage[template_name] = template_usage.get(template_name, 0) + 1
+
+        # Find most/least used templates
+        most_used_template = (
+            max(template_usage.items(), key=lambda x: x[1]) if template_usage else None
+        )
+        least_used_template = (
+            min(template_usage.items(), key=lambda x: x[1]) if template_usage else None
+        )
+
+        # Calculate average instances per template
+        avg_instances_per_template = (
+            sum(template_usage.values()) / len(template_usage) if template_usage else 0
+        )
+
+        return TemplateUsageStatistics(
+            total_instances=len(all_metadata),
+            total_templates=len(self._executors),
+            template_usage_counts=template_usage,
+            most_used_template=most_used_template,
+            least_used_template=least_used_template,
+            avg_instances_per_template=avg_instances_per_template,
+            unused_templates=[
+                name for name in self._executors.keys() if name not in template_usage
+            ],
+        )
+
+    def export_template_configurations(
+        self, include_performance: bool = True
+    ) -> TemplateConfigurationExport:
+        """Export all template configurations for backup or analysis.
+
+        Args:
+            include_performance: Whether to include performance data in export
+
+        Returns:
+            TemplateConfigurationExport object with complete system configuration
+
+        Example:
+            config = manager.export_template_configurations()
+            # Save to file or send to external system
+            import json
+            with open('template_backup.json', 'w') as f:
+                json.dump(config, f, indent=2, default=str)
+        """
+        all_metadata = self.get_all_active_templates_comprehensive()
+
+        # Export template definitions
+        templates = {}
+        for template_name, executor in self._executors.items():
+            templates[template_name] = TemplateDefinition(
+                source_id=executor.template_source_id,
+                template_variables=list(executor.get_template_variables()),
+                raw_template=executor._template_content,
+            )
+
+        # Export instance configurations
+        instances = {}
+        for instance_name, metadata in all_metadata.items():
+            performance_data = None
+            if include_performance and metadata.performance_summary:
+                performance_data = ExportPerformanceData(
+                    total_events=metadata.performance_summary.total_events,
+                    total_profit=metadata.performance_summary.total_profit,
+                    win_rate=metadata.performance_summary.win_rate,
+                    current_streak=metadata.performance_summary.current_streak,
+                    streak_type=metadata.performance_summary.streak_type,
+                )
+
+            instances[instance_name] = InstanceConfiguration(
+                template_name=instance_name.split(".", 1)[0],
+                template_parameters=metadata.template_parameters,
+                rendered_dsl=metadata.rendered_dsl,
+                activated_at=metadata.activated_at.isoformat(),
+                predicate_count=metadata.predicate_count,
+                start_predicate_count=metadata.start_predicate_count,
+                performance=performance_data,
+            )
+
+        return TemplateConfigurationExport(
+            export_timestamp=datetime.now().isoformat(),
+            system_info=SystemInfo(
+                total_templates=len(self._executors),
+                total_active_instances=len(all_metadata),
+            ),
+            templates=templates,
+            instances=instances,
+        )
+
+    def get_performance_analytics(self) -> PerformanceAnalytics:
+        """Get comprehensive performance analytics across all templates.
+
+        Returns:
+            PerformanceAnalytics object with performance analytics
+
+        Example:
+            analytics = manager.get_performance_analytics()
+            print(f"Best performing template: {analytics.best_template}")
+            print(f"System-wide win rate: {analytics.system_metrics.system_win_rate:.1%}")
+        """
+        all_metadata = self.get_all_active_templates_comprehensive()
+
+        # Collect performance data
+        performance_data = []
+        template_performance = {}
+
+        for instance_name, metadata in all_metadata.items():
+            if (
+                metadata.performance_summary
+                and metadata.performance_summary.total_events > 0
+            ):
+                template_name = instance_name.split(".", 1)[0]
+
+                perf = metadata.performance_summary
+                performance_data.append(
+                    InstancePerformanceData(
+                        instance_name=instance_name,
+                        template_name=template_name,
+                        total_profit=perf.total_profit,
+                        win_rate=perf.win_rate,
+                        total_events=perf.total_events,
+                        current_streak=perf.current_streak,
+                    )
+                )
+
+                # Aggregate by template
+                if template_name not in template_performance:
+                    template_performance[template_name] = TemplatePerformanceAggregate(
+                        total_profit=0,
+                        total_events=0,
+                        total_wins=0,
+                        instances=0,
+                    )
+
+                template_performance[template_name].total_profit += perf.total_profit
+                template_performance[template_name].total_events += perf.total_events
+                template_performance[template_name].total_wins += perf.win_count
+                template_performance[template_name].instances += 1
+
+        # Calculate system-wide metrics
+        total_profit = sum(p.total_profit for p in performance_data)
+        total_events = sum(p.total_events for p in performance_data)
+        total_wins = sum(int(p.win_rate * p.total_events) for p in performance_data)
+        system_win_rate = total_wins / total_events if total_events > 0 else 0
+
+        # Find best/worst performers
+        best_instance = (
+            max(performance_data, key=lambda x: x.total_profit)
+            if performance_data
+            else None
+        )
+        worst_instance = (
+            min(performance_data, key=lambda x: x.total_profit)
+            if performance_data
+            else None
+        )
+
+        # Find best template by average performance
+        best_template = None
+        if template_performance:
+            best_template = max(
+                template_performance.items(),
+                key=lambda x: x[1].total_profit / x[1].instances,
+            )
+
+        return PerformanceAnalytics(
+            system_metrics=SystemMetrics(
+                total_profit=total_profit,
+                total_events=total_events,
+                total_wins=total_wins,
+                system_win_rate=system_win_rate,
+                active_instances_with_data=len(performance_data),
+            ),
+            best_instance=best_instance,
+            worst_instance=worst_instance,
+            best_template=best_template,
+            template_performance=template_performance,
+            all_performance_data=performance_data,
+        )
 
     # Internal Helper Methods
 

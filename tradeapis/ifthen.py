@@ -1552,7 +1552,7 @@ class IfThenRuntime:
 
         try:
             ps = tuple([self.predicates[p] for p in peers])
-        except:
+        except KeyError:
             # if any id doesn't exist, abandon creating the entire peer group
             return None
 

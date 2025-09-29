@@ -32,11 +32,12 @@ def test_builtin_template_executor():
         "offset",
         "profit_pts",
         "loss_pts",
+        "flip_sides",
     }
     assert executor.get_template_variables() == expected_vars
 
 
-def test_template_validation():
+def test_template_argument_validation():
     """Test template argument validation."""
     runtime = IfThenRuntime()
     executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
@@ -207,6 +208,7 @@ def test_convenience_functions():
         "offset": 0.50,
         "profit_pts": None,
         "loss_pts": None,
+        "flip_sides": "both",
     }
     assert args == expected
 
@@ -226,7 +228,106 @@ def test_convenience_functions():
     assert args["trade_symbol"] == "/NQZ5"
     assert args["evict_symbol"] == "NQ"
     assert args["timeframe"] == 60
-    assert args["qty"] == 2
+    assert args["flip_sides"] == "both"
+
+    # Test flip_sides parameter
+    args_long = create_template_args_for_algo_flipper(
+        algo_symbol="ES",
+        watch_symbol="/ESM5",
+        trade_symbol="/ES",
+        evict_symbol="ES",
+        timeframe=35,
+        algo="temathma-5x-12x-vwap",
+        qty=1,
+        flip_sides="long",
+    )
+    assert args_long["flip_sides"] == "long"
+
+    args_short = create_template_args_for_algo_flipper(
+        algo_symbol="ES",
+        watch_symbol="/ESM5",
+        trade_symbol="/ES",
+        evict_symbol="ES",
+        timeframe=35,
+        algo="temathma-5x-12x-vwap",
+        qty=1,
+        flip_sides="short",
+    )
+    assert args_short["flip_sides"] == "short"
+
+
+def test_algo_flipper_flip_sides_logic():
+    """Test that flip_sides parameter correctly controls position reopening logic."""
+    runtime = IfThenRuntime()
+
+    # Test 'both' - both sides should reopen positions
+    args_both = create_template_args_for_algo_flipper(
+        algo_symbol="ES",
+        watch_symbol="/ESM5",
+        trade_symbol="/ES",
+        evict_symbol="ES",
+        timeframe=35,
+        algo="temathma-5x-12x-vwap",
+        qty=1,
+        flip_sides="both",
+    )
+    executor_both = IfThenRuntimeTemplateExecutor.from_builtin(
+        runtime, "algo_flipper.dsl"
+    )
+    dsl_both = executor_both.populate_template(args_both)
+
+    # Both checks should exist
+    assert "check_short" in dsl_both
+    assert "check_long" in dsl_both
+    # Both should include buy orders after eviction
+    assert "buy /ES -1 LIM" in dsl_both  # short action
+    assert "buy /ES 1 LIM" in dsl_both  # long action
+
+    # Test 'long' - only long should reopen position
+    args_long = create_template_args_for_algo_flipper(
+        algo_symbol="ES",
+        watch_symbol="/ESM5",
+        trade_symbol="/ES",
+        evict_symbol="ES",
+        timeframe=35,
+        algo="temathma-5x-12x-vwap",
+        qty=1,
+        flip_sides="long",
+    )
+    executor_long = IfThenRuntimeTemplateExecutor.from_builtin(
+        runtime, "algo_flipper.dsl"
+    )
+    dsl_long = executor_long.populate_template(args_long)
+
+    # Both checks should exist (for exits)
+    assert "check_short" in dsl_long
+    assert "check_long" in dsl_long
+    # Only long should include buy order after eviction
+    assert "buy /ES -1 LIM" not in dsl_long  # short action should only evict
+    assert "buy /ES 1 LIM" in dsl_long  # long action should include buy
+
+    # Test 'short' - only short should reopen position
+    args_short = create_template_args_for_algo_flipper(
+        algo_symbol="ES",
+        watch_symbol="/ESM5",
+        trade_symbol="/ES",
+        evict_symbol="ES",
+        timeframe=35,
+        algo="temathma-5x-12x-vwap",
+        qty=1,
+        flip_sides="short",
+    )
+    executor_short = IfThenRuntimeTemplateExecutor.from_builtin(
+        runtime, "algo_flipper.dsl"
+    )
+    dsl_short = executor_short.populate_template(args_short)
+
+    # Both checks should exist (for exits)
+    assert "check_short" in dsl_short
+    assert "check_long" in dsl_short
+    # Only short should include buy order after eviction
+    assert "buy /ES -1 LIM" in dsl_short  # short action should include buy
+    assert "buy /ES 1 LIM" not in dsl_short  # long action should only evict
 
 
 def test_other_builtin_templates():
@@ -360,8 +461,8 @@ def test_activation_management():
     # Test summary
     summary = executor.get_active_summary()
     assert "test_instance" in summary
-    assert summary["test_instance"]["created_count"] == created_count
-    assert summary["test_instance"]["predicate_count"] == len(all_ids)
+    assert summary["test_instance"].created_count == created_count
+    assert summary["test_instance"].predicate_count == len(all_ids)
 
     # Deactivate the template
     assert executor.deactivate("test_instance") is True
@@ -974,11 +1075,11 @@ def test_multi_template_manager_template_info():
     # Test get_template_info
     info = manager.get_template_info("test_template")
     assert info is not None
-    assert info["template_name"] == "test_template"
-    assert info["source_id"].startswith("string:")
+    assert info.template_name == "test_template"
+    assert info.source_id.startswith("string:")
     expected_test_vars = {"symbol", "threshold", "message"}
-    assert set(info["template_variables"]) == expected_test_vars
-    assert info["active_count"] == 0
+    assert set(info.template_variables) == expected_test_vars
+    assert info.active_count == 0
 
     # Test non-existent template
     assert manager.get_template_info("nonexistent") is None
@@ -1154,6 +1255,7 @@ def test_multi_template_manager_template_validation():
         "offset",
         "profit_pts",
         "loss_pts",
+        "flip_sides",
     }
     assert vars == expected_vars
 
@@ -1176,8 +1278,8 @@ def test_multi_template_manager_template_validation():
     assert is_valid
     assert len(missing) == 0
 
-    # Test preview_template
-    preview_dsl = manager.preview_template("algo_flipper", complete_args)
+    # Test populate_template (preview functionality)
+    preview_dsl = manager["algo_flipper"].populate_template(complete_args)
     assert "MNQ.35.algos.test.stopped" in preview_dsl
     assert "buy /MNQ" in preview_dsl
 
@@ -1204,10 +1306,10 @@ def test_multi_template_manager_active_summary():
 
     # Each summary should contain expected fields
     for instance_name, info in summary.items():
-        assert "activated_at" in info
-        assert "created_count" in info
-        assert "predicate_count" in info
-        assert "start_predicate_count" in info
+        assert hasattr(info, "activated_at")
+        assert hasattr(info, "created_count")
+        assert hasattr(info, "predicate_count")
+        assert hasattr(info, "start_predicate_count")
 
 
 def test_multi_template_manager_utility_methods():
@@ -1591,3 +1693,544 @@ def test_multi_template_manager_exact_source_matching():
         assert executor5 is executor6
     finally:
         os.unlink(temp_file)
+
+
+# ==================== ENHANCED OBSERVABILITY TESTS ====================
+
+
+def test_template_preview_capability():
+    """Test template preview without activation."""
+    runtime = IfThenRuntime()
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
+
+    # Test preview with valid arguments
+    args = create_template_args_for_algo_flipper(
+        algo_symbol="MNQ",
+        watch_symbol="/NQM5",
+        trade_symbol="/MNQ",
+        evict_symbol="MNQ",
+        timeframe=35,
+        algo="test-algo",
+        qty=1,
+    )
+
+    preview_dsl = executor.populate_template(args)
+
+    # Verify preview contains expected content
+    assert "MNQ.35.algos.test-algo.stopped" in preview_dsl
+    assert "buy /MNQ" in preview_dsl
+    assert "cancel MNQ*" in preview_dsl
+    assert "start: entrypoint" in preview_dsl
+
+    # Verify no template variables remain
+    assert "{{" not in preview_dsl
+    assert "{%" not in preview_dsl
+
+    # Verify no activation occurred
+    assert len(executor.list_active()) == 0
+
+
+def test_comprehensive_metadata_storage():
+    """Test comprehensive metadata storage and retrieval."""
+    runtime = IfThenRuntime()
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
+
+    # Create and activate a template
+    args = create_template_args_for_algo_flipper(
+        algo_symbol="ES",
+        watch_symbol="/ESZ4",
+        trade_symbol="/ES",
+        evict_symbol="ES",
+        timeframe=60,
+        algo="test-algo",
+        qty=2,
+    )
+
+    created_count, start_ids, all_ids = executor.create_and_activate(
+        "test_metadata", args
+    )
+
+    # Get comprehensive metadata
+    metadata = executor.get_comprehensive_metadata("test_metadata")
+    assert metadata is not None
+
+    # Verify metadata content
+    assert metadata.instance_name == "test_metadata"
+    assert metadata.template_source_id == "builtin:algo_flipper.dsl"
+    assert metadata.raw_template == BUILTIN_TEMPLATES["algo_flipper.dsl"]
+    assert metadata.template_parameters == args
+    assert "ES.60.algos.test-algo.stopped" in metadata.rendered_dsl
+    assert metadata.created_count == created_count
+    assert metadata.predicate_count == len(all_ids)
+    assert metadata.start_predicate_count == len(start_ids)
+    assert metadata.template_variables is not None
+    assert "algo_symbol" in metadata.template_variables
+    assert metadata.validation_status == "valid"
+    assert metadata.performance_summary is None  # No performance data yet
+
+    # Add some performance data
+    executor.state_update("test_metadata", {"profit": 100.0, "win": True})
+    executor.state_update("test_metadata", {"profit": -50.0, "win": False})
+
+    # Get updated metadata
+    updated_metadata = executor.get_comprehensive_metadata("test_metadata")
+    assert updated_metadata.performance_summary is not None
+    assert updated_metadata.performance_summary.total_events == 2
+    assert updated_metadata.performance_summary.total_profit == 50.0
+    assert updated_metadata.performance_summary.win_count == 1
+    assert updated_metadata.performance_summary.loss_count == 1
+
+
+def test_all_active_metadata():
+    """Test getting metadata for all active templates."""
+    runtime = IfThenRuntime()
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
+
+    # Create multiple instances
+    args1 = create_template_args_for_algo_flipper(
+        algo_symbol="MNQ",
+        watch_symbol="/NQM5",
+        trade_symbol="/MNQ",
+        evict_symbol="MNQ",
+        timeframe=35,
+        algo="test1",
+        qty=1,
+    )
+    args2 = create_template_args_for_algo_flipper(
+        algo_symbol="ES",
+        watch_symbol="/ESZ4",
+        trade_symbol="/ES",
+        evict_symbol="ES",
+        timeframe=60,
+        algo="test2",
+        qty=2,
+    )
+
+    executor.create_and_activate("instance1", args1)
+    executor.create_and_activate("instance2", args2)
+
+    # Get all metadata
+    all_metadata = executor.get_all_active_metadata()
+
+    assert len(all_metadata) == 2
+    assert "instance1" in all_metadata
+    assert "instance2" in all_metadata
+
+    # Verify each instance has correct metadata
+    metadata1 = all_metadata["instance1"]
+    assert metadata1.template_parameters["algo_symbol"] == "MNQ"
+    assert metadata1.template_parameters["timeframe"] == 35
+
+    metadata2 = all_metadata["instance2"]
+    assert metadata2.template_parameters["algo_symbol"] == "ES"
+    assert metadata2.template_parameters["timeframe"] == 60
+
+
+def test_template_debug_info():
+    """Test template debug information."""
+    runtime = IfThenRuntime()
+    executor = IfThenRuntimeTemplateExecutor.from_builtin(runtime, "algo_flipper.dsl")
+
+    # Create and activate a template
+    args = create_template_args_for_algo_flipper(
+        algo_symbol="NQ",
+        watch_symbol="/NQZ4",
+        trade_symbol="/NQ",
+        evict_symbol="NQ",
+        timeframe=45,
+        algo="debug-test",
+        qty=3,
+    )
+
+    executor.create_and_activate("debug_instance", args)
+
+    # Get debug info
+    debug_info = executor.get_template_debug_info("debug_instance")
+
+    assert debug_info is not None
+    assert debug_info.instance_name == "debug_instance"
+    assert debug_info.template_source_id == "builtin:algo_flipper.dsl"
+    assert "algo_symbol" in debug_info.template_variables
+    assert debug_info.validation_status == "valid"
+    assert debug_info.predicate_count > 0
+    assert debug_info.performance_events_count == 0
+    assert debug_info.has_performance_data is False
+    assert debug_info.template_parameters["algo_symbol"] == "NQ"
+    assert debug_info.rendered_dsl_length > 0
+    assert debug_info.raw_template_length > 0
+
+    # Test debug info for non-existent instance
+    debug_info_nonexistent = executor.get_template_debug_info("nonexistent")
+    assert debug_info_nonexistent is None
+
+
+def test_multi_template_comprehensive_observability():
+    """Test comprehensive observability features in multi-template manager."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Create templates
+    manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+    manager.from_builtin("breakout_monitor.dsl", "breakout_monitor")
+
+    # Create instances
+    args1 = create_template_args_for_algo_flipper(
+        algo_symbol="MNQ",
+        watch_symbol="/NQM5",
+        trade_symbol="/MNQ",
+        evict_symbol="MNQ",
+        timeframe=35,
+        algo="test1",
+        qty=1,
+    )
+    args2 = create_template_args_for_algo_flipper(
+        algo_symbol="ES",
+        watch_symbol="/ESZ4",
+        trade_symbol="/ES",
+        evict_symbol="ES",
+        timeframe=60,
+        algo="test2",
+        qty=2,
+    )
+    breakout_args = {
+        "symbol": "SPY",
+        "high_level": "450",
+        "low_level": "430",
+        "timeframe": "60",
+        "qty": "10",
+    }
+
+    manager.activate("algo_flipper", "mnq_instance", args1)
+    manager.activate("algo_flipper", "es_instance", args2)
+    manager.activate("breakout_monitor", "spy_breakout", breakout_args)
+
+    # Test comprehensive metadata retrieval
+    all_metadata = manager.get_all_active_templates_comprehensive()
+    assert len(all_metadata) == 3
+    assert "algo_flipper.mnq_instance" in all_metadata
+    assert "algo_flipper.es_instance" in all_metadata
+    assert "breakout_monitor.spy_breakout" in all_metadata
+
+    # Test individual instance metadata
+    mnq_metadata = manager.get_template_instance_metadata(
+        "algo_flipper", "mnq_instance"
+    )
+    assert mnq_metadata is not None
+    assert mnq_metadata.template_parameters["algo_symbol"] == "MNQ"
+
+    # Test debug info
+    debug_info = manager.get_template_debug_info("algo_flipper", "mnq_instance")
+    assert debug_info is not None
+    assert debug_info.instance_name == "algo_flipper.mnq_instance"
+    assert debug_info.template_parameters["algo_symbol"] == "MNQ"
+
+    # Test system health report
+    health_report = manager.get_system_health_report()
+    assert health_report.total_templates == 2
+    assert health_report.total_active_instances == 3
+    assert health_report.templates_with_instances == 2
+    assert "algo_flipper" in health_report.template_names
+    assert "breakout_monitor" in health_report.template_names
+
+
+def test_template_validation():
+    """Test template validation capabilities."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Create templates
+    manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+    manager.from_builtin("simple_flipper.dsl", "simple_flipper")
+
+    # Create some instances
+    args = create_template_args_for_algo_flipper(
+        algo_symbol="MNQ",
+        watch_symbol="/NQM5",
+        trade_symbol="/MNQ",
+        evict_symbol="MNQ",
+        timeframe=35,
+        algo="test",
+        qty=1,
+    )
+    manager.activate("algo_flipper", "test_instance", args)
+
+    # Test validation
+    validation_results = manager.validate_all_templates()
+
+    assert "algo_flipper" in validation_results
+    assert "simple_flipper" in validation_results
+
+    algo_result = validation_results["algo_flipper"]
+    assert algo_result.status == "valid"
+    assert "algo_symbol" in algo_result.template_variables
+    assert algo_result.active_instances == 1
+
+    simple_result = validation_results["simple_flipper"]
+    assert simple_result.status == "valid"
+    assert simple_result.active_instances == 0
+    assert "No active instances" in simple_result.warnings
+
+
+def test_usage_statistics():
+    """Test template usage statistics."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Create templates
+    manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+    manager.from_builtin("breakout_monitor.dsl", "breakout_monitor")
+    manager.from_builtin("simple_flipper.dsl", "simple_flipper")  # Unused
+
+    # Create instances
+    args1 = create_template_args_for_algo_flipper(
+        algo_symbol="MNQ",
+        watch_symbol="/NQM5",
+        trade_symbol="/MNQ",
+        evict_symbol="MNQ",
+        timeframe=35,
+        algo="test1",
+        qty=1,
+    )
+    args2 = create_template_args_for_algo_flipper(
+        algo_symbol="ES",
+        watch_symbol="/ESZ4",
+        trade_symbol="/ES",
+        evict_symbol="ES",
+        timeframe=60,
+        algo="test2",
+        qty=2,
+    )
+    breakout_args = {
+        "symbol": "SPY",
+        "high_level": "450",
+        "low_level": "430",
+        "timeframe": "60",
+        "qty": "10",
+    }
+
+    manager.activate("algo_flipper", "mnq_instance", args1)
+    manager.activate("algo_flipper", "es_instance", args2)
+    manager.activate("breakout_monitor", "spy_breakout", breakout_args)
+
+    # Test usage statistics
+    stats = manager.get_template_usage_statistics()
+
+    assert stats.total_instances == 3
+    assert stats.total_templates == 3
+    assert stats.template_usage_counts["algo_flipper"] == 2
+    assert stats.template_usage_counts["breakout_monitor"] == 1
+    assert "simple_flipper" in stats.unused_templates
+    assert stats.most_used_template == ("algo_flipper", 2)
+    assert (
+        stats.avg_instances_per_template == 1.5
+    )  # 3 instances / 2 templates with instances
+
+
+def test_export_configurations():
+    """Test template configuration export."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Create template and instance
+    manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+    args = create_template_args_for_algo_flipper(
+        algo_symbol="MNQ",
+        watch_symbol="/NQM5",
+        trade_symbol="/MNQ",
+        evict_symbol="MNQ",
+        timeframe=35,
+        algo="test",
+        qty=1,
+    )
+    manager.activate("algo_flipper", "test_instance", args)
+
+    # Add performance data
+    manager.state_update(
+        "algo_flipper", "test_instance", {"profit": 100.0, "win": True}
+    )
+
+    # Test export
+    export_data = manager.export_template_configurations()
+
+    assert export_data.export_timestamp is not None
+    assert export_data.system_info.total_templates == 1
+    assert export_data.system_info.total_active_instances == 1
+
+    # Check template export
+    assert "algo_flipper" in export_data.templates
+    template_data = export_data.templates["algo_flipper"]
+    assert template_data.source_id == "builtin:algo_flipper.dsl"
+    assert "algo_symbol" in template_data.template_variables
+    assert len(template_data.raw_template) > 0
+
+    # Check instance export
+    assert "algo_flipper.test_instance" in export_data.instances
+    instance_data = export_data.instances["algo_flipper.test_instance"]
+    assert instance_data.template_name == "algo_flipper"
+    assert instance_data.template_parameters["algo_symbol"] == "MNQ"
+    assert len(instance_data.rendered_dsl) > 0
+    assert instance_data.performance is not None
+    assert instance_data.performance.total_profit == 100.0
+
+
+def test_performance_analytics():
+    """Test performance analytics."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Create templates and instances
+    manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+    manager.from_builtin("breakout_monitor.dsl", "breakout_monitor")
+
+    args1 = create_template_args_for_algo_flipper(
+        algo_symbol="MNQ",
+        watch_symbol="/NQM5",
+        trade_symbol="/MNQ",
+        evict_symbol="MNQ",
+        timeframe=35,
+        algo="test1",
+        qty=1,
+    )
+    args2 = create_template_args_for_algo_flipper(
+        algo_symbol="ES",
+        watch_symbol="/ESZ4",
+        trade_symbol="/ES",
+        evict_symbol="ES",
+        timeframe=60,
+        algo="test2",
+        qty=2,
+    )
+
+    manager.activate("algo_flipper", "mnq_instance", args1)
+    manager.activate("algo_flipper", "es_instance", args2)
+
+    # Add performance data
+    manager.state_update("algo_flipper", "mnq_instance", {"profit": 150.0, "win": True})
+    manager.state_update(
+        "algo_flipper", "mnq_instance", {"profit": -50.0, "win": False}
+    )
+    manager.state_update("algo_flipper", "es_instance", {"profit": 200.0, "win": True})
+
+    # Test analytics
+    analytics = manager.get_performance_analytics()
+
+    # Check system metrics
+    system_metrics = analytics.system_metrics
+    assert system_metrics.total_profit == 300.0  # 150 - 50 + 200
+    assert system_metrics.total_events == 3
+    assert system_metrics.total_wins == 2
+    assert system_metrics.system_win_rate == 2 / 3
+    assert system_metrics.active_instances_with_data == 2
+
+    # Check best/worst instances
+    assert analytics.best_instance is not None
+    assert analytics.best_instance.instance_name == "algo_flipper.es_instance"
+    assert analytics.best_instance.total_profit == 200.0
+    assert analytics.worst_instance is not None
+    assert analytics.worst_instance.instance_name == "algo_flipper.mnq_instance"
+    assert analytics.worst_instance.total_profit == 100.0
+
+    # Check template performance
+    assert "algo_flipper" in analytics.template_performance
+    algo_perf = analytics.template_performance["algo_flipper"]
+    assert algo_perf.total_profit == 300.0
+    assert algo_perf.total_events == 3
+    assert algo_perf.instances == 2
+
+
+def test_enhanced_observability_integration():
+    """Test integration of all enhanced observability features."""
+    runtime = IfThenRuntime()
+    manager = IfThenMultiTemplateManager(runtime)
+
+    # Create multiple templates
+    manager.from_builtin("algo_flipper.dsl", "algo_flipper")
+    manager.from_builtin("breakout_monitor.dsl", "breakout_monitor")
+
+    # Create instances with different configurations
+    algorithms = [
+        (
+            "algo_flipper",
+            "mnq_fast",
+            create_template_args_for_algo_flipper(
+                "MNQ", "/NQM5", "/MNQ", "MNQ", 15, "fast-ema", 1
+            ),
+        ),
+        (
+            "algo_flipper",
+            "mnq_slow",
+            create_template_args_for_algo_flipper(
+                "MNQ", "/NQM5", "/MNQ", "MNQ", 60, "slow-ema", 1
+            ),
+        ),
+        (
+            "breakout_monitor",
+            "spy_breakout",
+            {
+                "symbol": "SPY",
+                "high_level": "450",
+                "low_level": "430",
+                "timeframe": "60",
+                "qty": "10",
+            },
+        ),
+    ]
+
+    for template_name, instance_name, args in algorithms:
+        manager.activate(template_name, instance_name, args)
+
+    # Add performance data
+    performance_events = [
+        ("algo_flipper", "mnq_fast", {"profit": 100.0, "win": True}),
+        ("algo_flipper", "mnq_fast", {"profit": -25.0, "win": False}),
+        ("algo_flipper", "mnq_slow", {"profit": 200.0, "win": True}),
+        ("breakout_monitor", "spy_breakout", {"profit": 75.0, "win": True}),
+    ]
+
+    for template_name, instance_name, event_data in performance_events:
+        manager.state_update(template_name, instance_name, event_data)
+
+    # Test comprehensive observability
+    all_metadata = manager.get_all_active_templates_comprehensive()
+    assert len(all_metadata) == 3
+
+    # Test system health
+    health = manager.get_system_health_report()
+    assert health.total_templates == 2
+    assert health.total_active_instances == 3
+    assert health.instances_with_performance == 3
+
+    # Test validation
+    validation = manager.validate_all_templates()
+    assert all(result.status == "valid" for result in validation.values())
+
+    # Test usage statistics
+    usage_stats = manager.get_template_usage_statistics()
+    assert usage_stats.total_instances == 3
+    assert usage_stats.template_usage_counts["algo_flipper"] == 2
+
+    # Test performance analytics
+    analytics = manager.get_performance_analytics()
+    assert analytics.system_metrics.total_profit == 350.0
+    assert analytics.system_metrics.system_win_rate == 0.75
+
+    # Test export
+    export = manager.export_template_configurations()
+    assert len(export.templates) == 2
+    assert len(export.instances) == 3
+
+    # Test individual metadata retrieval
+    mnq_fast_metadata = manager.get_template_instance_metadata(
+        "algo_flipper", "mnq_fast"
+    )
+    assert mnq_fast_metadata is not None
+    assert mnq_fast_metadata.template_parameters["timeframe"] == 15
+    assert mnq_fast_metadata.performance_summary is not None
+    assert mnq_fast_metadata.performance_summary.total_profit == 75.0
+
+    # Test debug info
+    debug_info = manager.get_template_debug_info("algo_flipper", "mnq_fast")
+    assert debug_info is not None
+    assert debug_info.template_parameters["timeframe"] == 15
+    assert debug_info.performance_events_count == 2
+    assert debug_info.has_performance_data is True
