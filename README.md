@@ -12,19 +12,19 @@ Includes:
 [`cal.py`](tradeapis/cal.py) | friendly interface to market calendars for getting *only* market days between given dates (i.e. ignore weekends and holidays). Primary requests are market days "between two dates" or "from X days ago".
 [`buylang.py`](tradeapis/buylang.py) | Convert text description of trades into Python objects for easy trade intention determination.
 [`tradier.py`](tradeapis/tradier.py) | aiohttp interface to tradier data and trading APIs. Caches relevant data with reasonable TTLs to speed up subsequent requests (expiration dates, strikes per date, saves quotes and chains after hours since they won't keep changing, etc)
-[`polygon.py`](tradeapis/polygon.py) | aiohttp interface to useful polygon stock API endpoints
+[`polygon.py`](tradeapis/polygon.py) | aiohttp interface to useful polygon (now "massive") stock API endpoints
 
 
 ## Account Login Config
 
-### Polygon
+### Polygon / Massive
 
-Polygon auth is by environment variable (or dotfile) because we haven't refactored it into a cleaner interface yet.
+Polygon/Massive auth is by environment variable (or dotfile) because we haven't refactored it into a cleaner interface yet.
 
 Configure your polygon API key as an environment variable or in `.env.tradeapis`:
 
 ```haskell
-TRADEAPIS_POLYGON_KEY=yourpolygonkeyhere
+TRADEAPIS_MASSIVE_KEY=yourpolygonmassivekeyhere
 ```
 
 ### Tradier
@@ -255,25 +255,25 @@ More practical usage examples and demonstrations of post-processing the returned
 
 ## polygon.py
 
-a *very* simple wrapper around polygon API endpoints I've used for data aggregation. Not a complete client for all their endpoints, but it matches the aiohttp patterns we use everywhere else throughout the trade platforms.
+a *very* simple wrapper around polygon/massive API endpoints I've used for data aggregation. Not a complete client for all their endpoints, but it matches the aiohttp patterns we use everywhere else throughout the trade platforms.
 
-Requires manually specifying your key via environment variable `TRADEAPIS_POLYGON_KEY` (or place in `.env.tradeapis`).
+Requires manually specifying your key via environment variable `TRADEAPIS_MASSIVE_KEY` (or place in `.env.tradeapis`).
 
 Currently includes useful wrappers to retrieve:
 
-- [`historicalTicks`](https://polygon.io/docs/get_v2_ticks_stocks_trades__ticker___date__anchor)
+- [`historicalTicks`](https://massive.com/docs/get_v2_ticks_stocks_trades__ticker___date__anchor)
     - retrieves all trades for a given symbol on a given date
         - (limited to 50k trades per query, so for all trades on a given symbol+date, you have to create your own iterator system to increment the recently received highest timestamp and provide it as the next smallest timestamp to request
             - (which *also* means you can't request a full symbol of daily trades concurrently because you need to always request the next 50k offset in a serial fashion, which we can't pre-calculate and spray into an async-gather up front)
                 - —but the fancy auto-advance-then-download-then-aggregate feature is available in `historicalticks.py` in the `stats` package of `tplat/mattplat` which may or may not be released as you read this)
-- [`historicalBars`](https://polygon.io/docs/get_v2_aggs_ticker__stocksTicker__range__multiplier___timespan___from___to__anchor)
+- [`historicalBars`](https://massive.com/docs/get_v2_aggs_ticker__stocksTicker__range__multiplier___timespan___from___to__anchor)
     - retrieves aggregate bars on any minute, hour, day, week, month, quarter, or year rollup you request
-- [`groupedBars`](https://polygon.io/docs/get_v2_aggs_grouped_locale_us_market_stocks__date__anchor)
+- [`groupedBars`](https://massive.com/docs/get_v2_aggs_grouped_locale_us_market_stocks__date__anchor)
     - retrieves entire stock market OHLC+vwap values for a given day
-        - also note: polygon performs back-dated trade corrections on these OHLC+vwap values even after the market closes, so if you request a full market snapshot at 2030 ET Monday then request the same snapshot again a day later, the values will have changed. For fast processing, use the latest data, but for accurate processing, grab the values again a day or two later to make sure they are fixed in place.
-- [`splits`](https://polygon.io/docs/get_v2_reference_splits__stocksTicker__anchor)
+        - also note: polygon/massive performs back-dated trade corrections on these OHLC+vwap values even after the market closes, so if you request a full market snapshot at 2030 ET Monday then request the same snapshot again a day later, the values will have changed. For fast processing, use the latest data, but for accurate processing, grab the values again a day or two later to make sure they are fixed in place.
+- [`splits`](https://massive.com/docs/get_v2_reference_splits__stocksTicker__anchor)
     - retrieve historical and recently announced stock splits for a single symbol
-- [`snapshot`](https://polygon.io/docs/get_v2_snapshot_locale_us_markets_stocks_tickers_anchor)
+- [`snapshot`](https://massive.com/docs/get_v2_snapshot_locale_us_markets_stocks_tickers_anchor)
     - retrieve a live snapshot of the entire market including last trade price, current bid/ask spread, current minute bar, previous day OHLC, and current day OHLC up to request time for each symbol in the market
 
-Also includes support for managing the [polygon trade websocket subscribe format](https://polygon.io/docs/websockets/ws_stocks_T_anchor) (see: `polygonSubscribe`, `polygonUnsubscribe`, `polygonConnect`, `polygonReconnect`), but for production use (if distributing live trade processing among multiple processes), the preferred method of deconstructing the websocket feed is [trade balancer](https://github.com/mattsta/trade-balancer) which can split the entire websocket feed of trades into backend worker processes at a rate of ~500ns per trade (which is enough to handle the multi-million trade-per-second bursts at start and end of day without any significant backlog).
+Also includes support for managing the [massive trade websocket subscribe format](https://massive.com/docs/websocket/quickstart#subscribing-to-data-feeds) (see: `polygonSubscribe`, `polygonUnsubscribe`, `polygonConnect`, `polygonReconnect`), but for production use (if distributing live trade processing among multiple processes), the preferred method of deconstructing the websocket feed is [trade balancer](https://github.com/mattsta/trade-balancer) which can split the entire websocket feed of trades into backend worker processes at a rate of ~500ns per trade (which is enough to handle the multi-million trade-per-second bursts at start and end of day without any significant backlog).

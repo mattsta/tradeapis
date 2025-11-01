@@ -9,29 +9,30 @@ import websockets
 from dotenv import dotenv_values
 from loguru import logger
 
-ENDPOINT_STOCKS = "wss://socket.polygon.io/stocks"
+ENDPOINT_STOCKS = "wss://socket.massive.com/stocks"
 ENDPOINT_STOCKS_DELAYED = ENDPOINT_STOCKS.replace("socket", "delayed")
-ENDPOINT_OPTIONS = "wss://socket.polygon.io/options"
+ENDPOINT_OPTIONS = "wss://socket.massive.com/options"
 ENDPOINT_OPTIONS_DELAYED = ENDPOINT_OPTIONS.replace("socket", "delayed")
-ENDPOINT_INDEX = "wss://socket.polygon.io/indices"
+ENDPOINT_INDEX = "wss://socket.massive.com/indices"
 ENDPOINT_INDEX_DELAYED = ENDPOINT_INDEX.replace("socket", "delayed")
-ENDPOINT_FUTURES = "wss://socket.polygon.io/futures"
+ENDPOINT_FUTURES = "wss://socket.massive.com/futures"
 ENDPOINT_FUTURES_DELAYED = ENDPOINT_FUTURES.replace("socket", "delayed")
 
 # TODO: refactor as better class encapsulation instead of being a module/env global.
 CONFIG = {**dotenv_values(".env.tradeapis"), **os.environ}
 
 try:
-    KEY = CONFIG["TRADEAPIS_POLYGON_KEY"]
+    KEY = CONFIG.get("TRADEAPIS_POLYGON_KEY", CONFIG.get("TRADAPIS_MASSIVE_KEY"))
+    assert KEY
 except:
-    logger.error("Sorry, must specify TRADEAPIS_POLYGON_KEY in env or .env.tradeapis")
+    logger.error("Sorry, must specify TRADEAPIS_MASSIVE_KEY in env or .env.tradeapis")
 
 # Docs at:
-# https://polygon.io/sockets
+# https://massive.com/sockets
 auth = {"action": "auth", "params": KEY}
 
 
-# https://polygon.io/docs/stocks/get_v3_trades__stockticker
+# https://massive.com/docs/stocks/get_v3_trades__stockticker
 def historicalTrades(session, symbol: str, date: str):
     """Endpoint returns all trades for a date with a maximum of 50k results per query.
 
@@ -39,7 +40,7 @@ def historicalTrades(session, symbol: str, date: str):
     set using the original query parameters, but with future date offsets.
 
     End of results is signaled by no 'next_url' key present in the results."""
-    url = f"https://api.polygon.io/v3/trades/{symbol}"
+    url = f"https://api.massive.com/v3/trades/{symbol}"
     args = {
         "timestamp": date,
         "limit": 50000,
@@ -51,13 +52,13 @@ def historicalTrades(session, symbol: str, date: str):
     return session.get(url, params=args)
 
 
-# https://polygon.io/docs/stocks/get_v3_quotes__stockticker
+# https://massive.com/docs/stocks/get_v3_quotes__stockticker
 def historicalQuotes(session, symbol: str, date: str):
     """Fetch all NBBO quote updates for a symbol for any date in the past.
 
     Fetch all quotes for day via the readAll() generator."""
 
-    url = f"https://api.polygon.io/v3/quotes/{symbol}"
+    url = f"https://api.massive.com/v3/quotes/{symbol}"
     args = {
         "timestamp": date,
         "limit": 50000,
@@ -111,7 +112,7 @@ async def readAll(what, session, *args, **kwargs):
 def fetchNext(session, result):
     """Given a Polygon V3 result, fetch the 'next_url' or return None."""
 
-    # https://polygon.io/blog/api-pagination-patterns/
+    # https://massive.com/blog/api-pagination-patterns/
     url = result.get("next_url")
     assert url, "Only pass results having next_url into fetchNext!"
 
@@ -119,7 +120,7 @@ def fetchNext(session, result):
     return session.get(url + f"&apiKey={auth['params']}")
 
 
-# https://polygon.io/docs/stocks/get_v2_aggs_ticker__stocksticker__range__multiplier___timespan___from___to
+# https://massive.com/docs/stocks/get_v2_aggs_ticker__stocksticker__range__multiplier___timespan___from___to
 def historicalBars(
     session,
     symbol: str,
@@ -135,7 +136,7 @@ def historicalBars(
     combine is, their API says, "size of the timespan multiplier" whatever that means.
     """
 
-    url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/{combine}/{timespan}/{dateFrom}/{dateTo}"
+    url = f"https://api.massive.com/v2/aggs/ticker/{symbol}/range/{combine}/{timespan}/{dateFrom}/{dateTo}"
 
     # yes, "false" here is correct because args aren't JSON, it's all just int/string conversions
     args = {
@@ -148,7 +149,7 @@ def historicalBars(
     return session.get(url, params=args)
 
 
-# https://polygon.io/docs/options/get_v3_reference_options_contracts
+# https://massive.com/docs/options/get_v3_reference_options_contracts
 def optionsContracts(
     session,
     underlying: str,
@@ -163,7 +164,7 @@ def optionsContracts(
     contractType is 'call' or 'put'
     """
 
-    url = "https://api.polygon.io/v3/reference/options/contracts"
+    url = "https://api.massive.com/v3/reference/options/contracts"
 
     # yes, string "true" / "false" here is correct because args aren't JSON, it's all just int/string conversions
     args = {"sort": "expiration_date", "order": "asc", "apiKey": auth["params"]}
@@ -179,14 +180,14 @@ def optionsContracts(
     return session.get(url, params=args)
 
 
-# https://polygon.io/docs/get_v2_aggs_grouped_locale_us_market_stocks__date__anchor
+# https://massive.com/docs/get_v2_aggs_grouped_locale_us_market_stocks__date__anchor
 def groupedBars(session, date: str):
     """Endpoint returns daily bars for all symbols for an entire day.
 
     Give a date, get result.
     """
 
-    url = f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{date}"
+    url = f"https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/{date}"
 
     # yes, "false" here is correct because args aren't JSON, it's all just int/string conversions
     args = {"unadjusted": "false", "apiKey": auth["params"]}
@@ -194,7 +195,7 @@ def groupedBars(session, date: str):
     return session.get(url, params=args)
 
 
-# https://polygon.io/docs/stocks/get_v3_reference_splits
+# https://massive.com/docs/stocks/get_v3_reference_splits
 def splits(session, symbol: str, reverse=False):
     """Endpoint returns all historical forward stock split dates for symbol.
 
@@ -205,8 +206,8 @@ def splits(session, symbol: str, reverse=False):
     # TODO: this API supports filtering tickers by range, so we could just
     #       request daily "tickers.gt=A" to get everything with one original
     #       fetch with full pagination until the end (instead of all directly)
-    # See "Query Filter Extensions" at https://polygon.io/blog/api-pagination-patterns/
-    url = "https://api.polygon.io/v3/reference/splits"
+    # See "Query Filter Extensions" at https://massive.com/blog/api-pagination-patterns/
+    url = "https://api.massive.com/v3/reference/splits"
 
     # we want a dual sort here so provide list of tuples so a dict
     # doesn't overwrite the same shared key...
@@ -223,7 +224,7 @@ def splits(session, symbol: str, reverse=False):
     return session.get(url, params=args)
 
 
-# https://polygon.io/docs/stocks/get_v3_reference_tickers__ticker
+# https://massive.com/docs/stocks/get_v3_reference_tickers__ticker
 def symbolDetail(session, symbol: str):
     """Endpoint returns dict of symbol details described at doc link.
 
@@ -232,26 +233,26 @@ def symbolDetail(session, symbol: str):
     Most useful for retrieving the current share count so we can calculate
     a live market cap using (share count * last trade price)."""
 
-    url = f"https://api.polygon.io/v3/reference/tickers/{symbol}"
+    url = f"https://api.massive.com/v3/reference/tickers/{symbol}"
     args = {"apiKey": auth["params"]}
 
     return session.get(url, params=args)
 
 
-# https://polygon.io/docs/get_v2_reference_financials__stocksTicker__anchor
+# https://massive.com/docs/get_v2_reference_financials__stocksTicker__anchor
 def symbolFinancial(session, symbol: str):
     """Endpoint returns dict of symbol details described at doc link.
 
     Note: these are only updated yearly? They all seem stale."""
 
-    url = f"https://api.polygon.io/v2/reference/financials/{symbol}"
+    url = f"https://api.massive.com/v2/reference/financials/{symbol}"
     args = {"limit": 1, "type": "Q", "apiKey": auth["params"]}
 
     return session.get(url, params=args)
 
 
 def exchanges(session, asset: str = "stocks"):
-    url = "https://api.polygon.io/v3/reference/exchanges"
+    url = "https://api.massive.com/v3/reference/exchanges"
 
     # Other assets include: options, crypto, fx
     args = {"asset_class": asset, "apiKey": auth["params"]}
@@ -260,7 +261,7 @@ def exchanges(session, asset: str = "stocks"):
 
 
 def gl(session, what):
-    url = f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/{what}"
+    url = f"https://api.massive.com/v2/snapshot/locale/us/markets/stocks/{what}"
     args = {"apiKey": auth["params"]}
 
     return session.get(url, params=args)
@@ -274,9 +275,9 @@ def losers(session):
     return gl(session, "losers")
 
 
-# https://polygon.io/docs/get_v2_snapshot_locale_us_markets_stocks_tickers_anchor
+# https://massive.com/docs/get_v2_snapshot_locale_us_markets_stocks_tickers_anchor
 def snapshot(session):
-    url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
+    url = "https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers"
     args = {"apiKey": auth["params"]}
 
     return session.get(url, params=args)
@@ -287,7 +288,7 @@ def snapshotOne(session, symbol):
     # looks like an invalid path request.
     symbol = symbol.upper().replace("/", ".")
     url = (
-        f"https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers/{symbol}"
+        f"https://api.massive.com/v2/snapshot/locale/us/markets/stocks/tickers/{symbol}"
     )
     args = {"apiKey": auth["params"]}
 
